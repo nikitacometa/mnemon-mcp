@@ -25,23 +25,31 @@ function escapeFtsToken(token: string): string {
 
 /**
  * Build FTS5 MATCH query from user query string.
- * Splits on whitespace, escapes each token, joins with AND.
- * Single-word queries become: "word"
- * Multi-word: "word1" AND "word2" AND ...
+ * Splits on whitespace, escapes each token, applies prefix matching
+ * for tokens ≥ 4 chars to handle morphological variants (Cyrillic/Thai).
  */
-function buildFtsQuery(query: string): string {
+function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
   const tokens = query
     .trim()
     .split(/\s+/)
     .filter((t) => t.length > 0)
-    .map((t) => `"${escapeFtsToken(t)}"`)
-    .filter((t) => t !== '""');
+    .map((t) => {
+      const escaped = escapeFtsToken(t);
+      if (!escaped) return "";
+      // Use prefix matching for longer tokens to handle morphology
+      // e.g. "випассана" matches "випассану", "випассаны", etc.
+      if (escaped.length >= 4) {
+        return `"${escaped}"*`;
+      }
+      return `"${escaped}"`;
+    })
+    .filter((t) => t !== "" && t !== '""');
 
   if (tokens.length === 0) {
     throw new Error("Query must contain at least one non-empty term");
   }
 
-  return tokens.join(" AND ");
+  return tokens.join(` ${operator} `);
 }
 
 /** Normalize BM25 score (negative rank) to 0–1 */
@@ -152,7 +160,7 @@ function ftsSearch(
 ): Array<{ id: string; score: number }> {
   let ftsQuery: string;
   try {
-    ftsQuery = buildFtsQuery(input.query);
+    ftsQuery = buildFtsQuery(input.query, "AND");
   } catch {
     return [];
   }
@@ -210,9 +218,18 @@ function ftsSearch(
 
   try {
     const rows = db.prepare<unknown[], FtsRow>(sql).all(...params);
-    return rows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) }));
+    const results = rows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) }));
+
+    // Fallback: if AND returns nothing and query has multiple tokens, retry with OR
+    if (results.length === 0 && input.query.trim().split(/\s+/).length > 1) {
+      const orQuery = buildFtsQuery(input.query, "OR");
+      const orParams = [orQuery, ...params.slice(1)];
+      const orRows = db.prepare<unknown[], FtsRow>(sql).all(...orParams);
+      return orRows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) * 0.8 }));
+    }
+
+    return results;
   } catch (err) {
-    // FTS5 syntax error — return empty rather than crashing
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`FTS5 query failed: ${message}`);
   }
