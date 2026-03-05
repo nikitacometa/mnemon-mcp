@@ -52,7 +52,7 @@ export const DIRECTORY_MAPPINGS: DirectoryMapping[] = [
     entity_name: "from-heading",
     importance: 0.8,
     confidence: 0.8,
-    split: "h2",
+    split: "h3",
   },
   {
     glob: "projects/projects.md",
@@ -140,6 +140,70 @@ export const DIRECTORY_MAPPINGS: DirectoryMapping[] = [
     split: "h2",
     fileFilter: (f) => /^2026-\d{2}-\d{2}\.md$/.test(f),
   },
+
+  // ── Ideas & Creative (P4) ──
+  {
+    glob: "ideas/ideas.md",
+    layer: "semantic",
+    entity_type: "concept",
+    entity_name: "from-heading",
+    importance: 0.5,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "ideas/content-ideas.md",
+    layer: "semantic",
+    entity_type: "concept",
+    entity_name: "from-heading",
+    importance: 0.5,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "ideas/watch-later.md",
+    layer: "resource",
+    entity_type: "concept",
+    importance: 0.3,
+    confidence: 0.8,
+    split: "whole",
+  },
+  {
+    glob: "creative/rap.md",
+    layer: "resource",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.4,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "creative/standup.md",
+    layer: "resource",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.4,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "creative/writing.md",
+    layer: "resource",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.4,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "creative/jokes.md",
+    layer: "resource",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.4,
+    confidence: 0.8,
+    split: "h2",
+  },
 ];
 
 /** External files (outside KB root) to import */
@@ -180,8 +244,6 @@ export const SKIP_PATTERNS = [
   "email/**",
   "finance/**",
   "content/**",
-  "ideas/**",
-  "creative/**",
   "personal/**",
   "reference/**",
 ];

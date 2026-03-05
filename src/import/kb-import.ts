@@ -33,6 +33,7 @@ export interface ImportOptions {
   singleFile?: string | undefined;
   singleLayer?: Layer | undefined;
   verbose?: boolean | undefined;
+  force?: boolean | undefined;
 }
 
 export interface ImportResult {
@@ -137,7 +138,8 @@ function processFile(
   mapping: FileMapping,
   kbPath: string,
   dryRun: boolean,
-  verbose: boolean
+  verbose: boolean,
+  force: boolean = false
 ): { sections: number; created: number; superseded: number; status: "imported" | "skipped" | "updated" | "error"; error?: string } {
   const sourcePath = filePath.startsWith(kbPath)
     ? relative(kbPath, filePath)
@@ -159,7 +161,7 @@ function processFile(
   }
 
   // Check if already imported with same hash
-  if (isAlreadyImported(db, sourcePath, parsed.hash)) {
+  if (!force && isAlreadyImported(db, sourcePath, parsed.hash)) {
     if (verbose) console.log(`  SKIP (unchanged): ${sourcePath}`);
     return { sections: 0, created: 0, superseded: 0, status: "skipped" };
   }
@@ -227,12 +229,13 @@ export function runImport(options: ImportOptions): ImportResult {
   const kbPath = resolve(expandHome(options.kbPath));
   const dryRun = options.dryRun ?? false;
   const verbose = options.verbose ?? false;
+  const force = options.force ?? false;
 
   if (!existsSync(kbPath)) {
     throw new Error(`KB path does not exist: ${kbPath}`);
   }
 
-  const db = dryRun ? openDatabase() : openDatabase();
+  const db = dryRun ? openDatabase(":memory:") : openDatabase();
   const result: ImportResult = {
     filesProcessed: 0,
     filesSkipped: 0,
@@ -275,7 +278,7 @@ export function runImport(options: ImportOptions): ImportResult {
       throw new Error(`No mapping found for ${relPath}. Use --layer to specify.`);
     }
 
-    const fileResult = processFile(db, filePath, mapping, kbPath, dryRun, verbose);
+    const fileResult = processFile(db, filePath, mapping, kbPath, dryRun, verbose, force);
     result.filesProcessed = 1;
     result.memoriesCreated = fileResult.created;
     result.memoriesSuperseded = fileResult.superseded;
@@ -300,7 +303,7 @@ export function runImport(options: ImportOptions): ImportResult {
 
       result.filesProcessed++;
       const relPath = relative(kbPath, filePath);
-      const fileResult = processFile(db, filePath, dirMapping, kbPath, dryRun, verbose);
+      const fileResult = processFile(db, filePath, dirMapping, kbPath, dryRun, verbose, force);
 
       if (fileResult.status === "skipped") {
         result.filesSkipped++;
@@ -325,7 +328,7 @@ export function runImport(options: ImportOptions): ImportResult {
     }
 
     result.filesProcessed++;
-    const fileResult = processFile(db, filePath, ext.mapping, kbPath, dryRun, verbose);
+    const fileResult = processFile(db, filePath, ext.mapping, kbPath, dryRun, verbose, force);
 
     if (fileResult.status === "skipped") {
       result.filesSkipped++;

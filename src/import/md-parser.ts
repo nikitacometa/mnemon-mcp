@@ -72,8 +72,8 @@ export function splitByHeading(body: string, level: 2 | 3): Section[] {
 
   for (const line of lines) {
     if (line.startsWith(prefix)) {
-      // Save previous section
-      if (currentTitle || currentLines.length > 0) {
+      // Save previous section (skip prelude content before first heading)
+      if (currentTitle) {
         const content = currentLines.join("\n").trim();
         if (content) {
           sections.push({ title: currentTitle, level, content });
@@ -86,8 +86,8 @@ export function splitByHeading(body: string, level: 2 | 3): Section[] {
     }
   }
 
-  // Last section
-  if (currentTitle || currentLines.length > 0) {
+  // Last section (skip if no heading was encountered)
+  if (currentTitle) {
     const content = currentLines.join("\n").trim();
     if (content) {
       sections.push({ title: currentTitle, level, content });

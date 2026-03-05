@@ -18,8 +18,9 @@ function parseArgs(args: string[]): {
   layer?: Layer | undefined;
   dryRun: boolean;
   verbose: boolean;
+  force: boolean;
 } {
-  const result: { kbPath?: string | undefined; file?: string | undefined; layer?: Layer | undefined; dryRun: boolean; verbose: boolean } = { dryRun: false, verbose: false };
+  const result: { kbPath?: string | undefined; file?: string | undefined; layer?: Layer | undefined; dryRun: boolean; verbose: boolean; force: boolean } = { dryRun: false, verbose: false, force: false };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -40,6 +41,9 @@ function parseArgs(args: string[]): {
         break;
       case "--dry-run":
         result.dryRun = true;
+        break;
+      case "--force":
+        result.force = true;
         break;
       case "--verbose":
       case "-v":
@@ -108,6 +112,7 @@ try {
     singleLayer: args.layer,
     dryRun: args.dryRun,
     verbose: args.verbose,
+    force: args.force,
   });
   printSummary(result, args.dryRun);
   process.exit(result.errors.length > 0 ? 1 : 0);
