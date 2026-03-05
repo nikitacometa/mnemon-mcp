@@ -1,0 +1,345 @@
+/**
+ * KB import pipeline — reads markdown files from mnemon-kb, splits into memories,
+ * and inserts into persona-mcp SQLite database.
+ *
+ * Idempotent: uses import_log + file_hash for dedup.
+ * Superseding: re-import of changed files supersedes old memories via source_file.
+ */
+
+import { readFileSync, existsSync } from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
+import { homedir } from "node:os";
+import { globSync } from "node:fs";
+import type Database from "better-sqlite3";
+import { openDatabase } from "../db.js";
+import { memoryAdd } from "../tools/memory-add.js";
+import type { Layer, EntityType, MemoryAddInput } from "../types.js";
+import {
+  DIRECTORY_MAPPINGS,
+  EXTERNAL_FILES,
+  type DirectoryMapping,
+  type FileMapping,
+} from "./kb-config.js";
+import {
+  parseFile,
+  splitByHeading,
+  extractDateFromFilename,
+  type Section,
+} from "./md-parser.js";
+
+export interface ImportOptions {
+  kbPath: string;
+  dryRun?: boolean | undefined;
+  singleFile?: string | undefined;
+  singleLayer?: Layer | undefined;
+  verbose?: boolean | undefined;
+}
+
+export interface ImportResult {
+  filesProcessed: number;
+  filesSkipped: number;
+  memoriesCreated: number;
+  memoriesSuperseded: number;
+  errors: Array<{ file: string; error: string }>;
+  details: Array<{
+    file: string;
+    sections: number;
+    status: "imported" | "skipped" | "updated" | "error";
+  }>;
+}
+
+/** Expand ~ in paths */
+function expandHome(p: string): string {
+  return p.startsWith("~") ? p.replace("~", homedir()) : p;
+}
+
+/** Resolve glob patterns against a base path */
+function resolveGlob(pattern: string, basePath: string): string[] {
+  const fullPattern = join(basePath, pattern);
+  try {
+    return globSync(fullPattern);
+  } catch {
+    return [];
+  }
+}
+
+/** Check if file hash already exists in import_log (unchanged file) */
+function isAlreadyImported(db: Database.Database, sourcePath: string, hash: string): boolean {
+  const row = db
+    .prepare<[string, string], { id: string }>(
+      `SELECT id FROM import_log WHERE source_path = ? AND file_hash = ?`
+    )
+    .get(sourcePath, hash);
+  return row !== undefined;
+}
+
+/** Log import to import_log table */
+function logImport(
+  db: Database.Database,
+  sourcePath: string,
+  sourceType: string,
+  hash: string,
+  created: number,
+  updated: number,
+  status: string,
+  errors: string[] = []
+): void {
+  db.prepare(
+    `INSERT INTO import_log (source_path, source_type, file_hash, memories_created, memories_updated, status, errors)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(sourcePath, sourceType, hash, created, updated, status, JSON.stringify(errors));
+}
+
+/** Build MemoryAddInput from a section + mapping config */
+function buildMemoryInput(
+  section: Section | null,
+  fullContent: string,
+  mapping: FileMapping,
+  sourcePath: string,
+  filename: string
+): MemoryAddInput {
+  const content = section ? `## ${section.title}\n\n${section.content}` : fullContent;
+  const title = section?.title ?? basename(filename, ".md");
+
+  let entityName = mapping.entity_name;
+  if (entityName === "from-heading" && section) {
+    // Extract first meaningful part of heading (before —, (, etc.)
+    entityName = section.title.split(/\s*[—\-(|]/)[0]!.trim();
+  } else if (entityName === "from-heading") {
+    entityName = undefined;
+  }
+
+  const eventAt = mapping.layer === "episodic" ? extractDateFromFilename(filename) : undefined;
+
+  // source_file includes section title for per-section superseding
+  const sourceFile = section ? `${sourcePath}#${section.title}` : sourcePath;
+
+  return {
+    content,
+    layer: mapping.layer,
+    title,
+    entity_type: mapping.entity_type,
+    ...(entityName ? { entity_name: entityName } : {}),
+    importance: mapping.importance,
+    confidence: mapping.confidence,
+    source: "import:kb",
+    source_file: sourceFile,
+    scope: mapping.scope ?? "global",
+    ...(eventAt ? { event_at: eventAt } : {}),
+    meta: { imported_from: sourcePath },
+  };
+}
+
+/** Process a single file with its mapping */
+function processFile(
+  db: Database.Database,
+  filePath: string,
+  mapping: FileMapping,
+  kbPath: string,
+  dryRun: boolean,
+  verbose: boolean
+): { sections: number; created: number; superseded: number; status: "imported" | "skipped" | "updated" | "error"; error?: string } {
+  const sourcePath = filePath.startsWith(kbPath)
+    ? relative(kbPath, filePath)
+    : filePath;
+
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch (err) {
+    return { sections: 0, created: 0, superseded: 0, status: "error", error: `Read error: ${err}` };
+  }
+
+  const parsed = parseFile(raw);
+
+  // Use frontmatter layer override if present
+  const effectiveMapping = { ...mapping };
+  if (parsed.frontmatter.layer && ["episodic", "semantic", "procedural", "resource"].includes(parsed.frontmatter.layer)) {
+    effectiveMapping.layer = parsed.frontmatter.layer as Layer;
+  }
+
+  // Check if already imported with same hash
+  if (isAlreadyImported(db, sourcePath, parsed.hash)) {
+    if (verbose) console.log(`  SKIP (unchanged): ${sourcePath}`);
+    return { sections: 0, created: 0, superseded: 0, status: "skipped" };
+  }
+
+  const filename = basename(filePath);
+  let created = 0;
+  let superseded = 0;
+
+  if (effectiveMapping.split === "whole") {
+    // Import as single memory
+    const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
+    if (dryRun) {
+      if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (whole), layer=${input.layer}`);
+      return { sections: 1, created: 1, superseded: 0, status: "imported" };
+    }
+    const result = memoryAdd(db, input);
+    created = 1;
+    superseded = result.superseded_ids?.length ?? 0;
+  } else {
+    // Split by heading
+    const level = effectiveMapping.split === "h2" ? 2 : 3;
+    const sections = splitByHeading(parsed.body, level);
+
+    if (sections.length === 0) {
+      // File has no headings at the specified level — import as whole
+      const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
+      if (dryRun) {
+        if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (no headings), layer=${input.layer}`);
+        return { sections: 1, created: 1, superseded: 0, status: "imported" };
+      }
+      const result = memoryAdd(db, input);
+      created = 1;
+      superseded = result.superseded_ids?.length ?? 0;
+    } else {
+      for (const section of sections) {
+        if (!section.content.trim()) continue;
+        const input = buildMemoryInput(section, "", effectiveMapping, sourcePath, filename);
+        if (dryRun) {
+          if (verbose) console.log(`  DRY: ${sourcePath}#${section.title} → layer=${input.layer}`);
+          created++;
+          continue;
+        }
+        const result = memoryAdd(db, input);
+        created++;
+        superseded += result.superseded_ids?.length ?? 0;
+      }
+    }
+  }
+
+  if (!dryRun) {
+    logImport(db, sourcePath, "kb-markdown", parsed.hash, created, superseded, "success");
+    if (verbose) console.log(`  OK: ${sourcePath} → ${created} records, ${superseded} superseded`);
+  }
+
+  return {
+    sections: created,
+    created,
+    superseded,
+    status: superseded > 0 ? "updated" : "imported",
+  };
+}
+
+/** Main import function */
+export function runImport(options: ImportOptions): ImportResult {
+  const kbPath = resolve(expandHome(options.kbPath));
+  const dryRun = options.dryRun ?? false;
+  const verbose = options.verbose ?? false;
+
+  if (!existsSync(kbPath)) {
+    throw new Error(`KB path does not exist: ${kbPath}`);
+  }
+
+  const db = dryRun ? openDatabase() : openDatabase();
+  const result: ImportResult = {
+    filesProcessed: 0,
+    filesSkipped: 0,
+    memoriesCreated: 0,
+    memoriesSuperseded: 0,
+    errors: [],
+    details: [],
+  };
+
+  // Single file mode
+  if (options.singleFile) {
+    const filePath = resolve(expandHome(options.singleFile));
+    if (!existsSync(filePath)) {
+      throw new Error(`File does not exist: ${filePath}`);
+    }
+
+    // Find matching mapping or use provided layer
+    let mapping: FileMapping | undefined;
+    const relPath = filePath.startsWith(kbPath) ? relative(kbPath, filePath) : filePath;
+
+    for (const dirMapping of DIRECTORY_MAPPINGS) {
+      const matches = resolveGlob(dirMapping.glob, kbPath);
+      if (matches.includes(filePath)) {
+        mapping = dirMapping;
+        break;
+      }
+    }
+
+    if (!mapping && options.singleLayer) {
+      mapping = {
+        layer: options.singleLayer,
+        entity_type: "concept",
+        importance: 0.5,
+        confidence: 0.8,
+        split: "h2",
+      };
+    }
+
+    if (!mapping) {
+      throw new Error(`No mapping found for ${relPath}. Use --layer to specify.`);
+    }
+
+    const fileResult = processFile(db, filePath, mapping, kbPath, dryRun, verbose);
+    result.filesProcessed = 1;
+    result.memoriesCreated = fileResult.created;
+    result.memoriesSuperseded = fileResult.superseded;
+    result.details.push({ file: relPath, sections: fileResult.sections, status: fileResult.status });
+    if (fileResult.error) {
+      result.errors.push({ file: relPath, error: fileResult.error });
+    }
+
+    db.close();
+    return result;
+  }
+
+  // Full KB import
+  for (const dirMapping of DIRECTORY_MAPPINGS) {
+    const files = resolveGlob(dirMapping.glob, kbPath);
+
+    for (const filePath of files) {
+      const filename = basename(filePath);
+
+      // Apply file filter if defined
+      if (dirMapping.fileFilter && !dirMapping.fileFilter(filename)) continue;
+
+      result.filesProcessed++;
+      const relPath = relative(kbPath, filePath);
+      const fileResult = processFile(db, filePath, dirMapping, kbPath, dryRun, verbose);
+
+      if (fileResult.status === "skipped") {
+        result.filesSkipped++;
+      } else {
+        result.memoriesCreated += fileResult.created;
+        result.memoriesSuperseded += fileResult.superseded;
+      }
+
+      result.details.push({ file: relPath, sections: fileResult.sections, status: fileResult.status });
+      if (fileResult.error) {
+        result.errors.push({ file: relPath, error: fileResult.error });
+      }
+    }
+  }
+
+  // External files
+  for (const ext of EXTERNAL_FILES) {
+    const filePath = resolve(expandHome(ext.path));
+    if (!existsSync(filePath)) {
+      if (verbose) console.log(`  SKIP (not found): ${ext.path}`);
+      continue;
+    }
+
+    result.filesProcessed++;
+    const fileResult = processFile(db, filePath, ext.mapping, kbPath, dryRun, verbose);
+
+    if (fileResult.status === "skipped") {
+      result.filesSkipped++;
+    } else {
+      result.memoriesCreated += fileResult.created;
+      result.memoriesSuperseded += fileResult.superseded;
+    }
+
+    result.details.push({ file: ext.path, sections: fileResult.sections, status: fileResult.status });
+    if (fileResult.error) {
+      result.errors.push({ file: ext.path, error: fileResult.error });
+    }
+  }
+
+  db.close();
+  return result;
+}
