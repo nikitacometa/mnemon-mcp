@@ -75,6 +75,19 @@ export interface ImportLogRow {
   errors: string; // JSON string
 }
 
+export type EventType = "created" | "updated" | "superseded";
+
+export interface EventLogRow {
+  id: string;
+  memory_id: string;
+  event_type: EventType;
+  actor: string;
+  old_content: string | null;
+  new_content: string | null;
+  diff_meta: string;
+  occurred_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Tool input types
 // ---------------------------------------------------------------------------

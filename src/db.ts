@@ -89,6 +89,26 @@ function runMigrations(db: Database.Database): void {
     );
 
     -- =========================================================
+    -- event_log: append-only audit trail for all memory mutations
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS event_log (
+      id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      memory_id   TEXT NOT NULL,
+      event_type  TEXT NOT NULL CHECK (event_type IN ('created', 'updated', 'superseded')),
+      actor       TEXT NOT NULL DEFAULT 'api',
+      old_content TEXT,
+      new_content TEXT,
+      diff_meta   TEXT NOT NULL DEFAULT '{}',
+      occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_event_log_memory
+      ON event_log(memory_id);
+
+    CREATE INDEX IF NOT EXISTS idx_event_log_occurred
+      ON event_log(occurred_at DESC);
+
+    -- =========================================================
     -- FTS5: full-text search across title, content, entity_name
     -- Standalone (not content=) for simpler trigger-based sync
     -- unicode61 tokenizer: Cyrillic + Thai support

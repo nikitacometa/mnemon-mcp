@@ -110,9 +110,20 @@ function updateInPlace(
 
   params.push(existing.id);
 
-  db.prepare(
-    `UPDATE memories SET ${setClauses.join(", ")} WHERE id = ?`
-  ).run(...params);
+  const newContent = input.content ?? existing.content;
+
+  const run = db.transaction(() => {
+    db.prepare(
+      `UPDATE memories SET ${setClauses.join(", ")} WHERE id = ?`
+    ).run(...params);
+
+    db.prepare(
+      `INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+       VALUES (?, 'updated', ?, ?, ?)`
+    ).run(existing.id, existing.source, existing.content, newContent);
+  });
+
+  run();
 
   return { updated_id: existing.id, superseded: false };
 }
@@ -157,6 +168,11 @@ function createSupersedingEntry(
     `UPDATE memories SET superseded_by = ? WHERE id = ?`
   );
 
+  const logEvent = db.prepare(`
+    INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
   const run = db.transaction(() => {
     insertStmt.run(
       newId,
@@ -179,6 +195,9 @@ function createSupersedingEntry(
 
     // Mark the old entry as superseded
     setSupersededBy.run(newId, existing.id);
+
+    logEvent.run(existing.id, "superseded", existing.source, existing.content, null);
+    logEvent.run(newId, "created", existing.source, null, newContent);
   });
 
   run();

@@ -68,6 +68,13 @@ export function memoryAdd(
     UPDATE memories SET superseded_by = ? WHERE id = ?
   `);
 
+  const logEvent = db.prepare(`
+    INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  const actor = input.source ?? "api";
+
   // Run insert + supersede chain in a single transaction
   const run = db.transaction(() => {
     insertStmt.run(
@@ -75,7 +82,7 @@ export function memoryAdd(
       input.layer,
       input.content,
       input.title ?? null,
-      input.source ?? "api",
+      actor,
       input.source_file ?? null,
       input.session_id ?? null,
       input.event_at ?? null,
@@ -89,8 +96,11 @@ export function memoryAdd(
       metaJson
     );
 
+    logEvent.run(id, "created", actor, null, input.content);
+
     for (const oldId of supersededIds) {
       updateSuperseded.run(id, oldId);
+      logEvent.run(oldId, "superseded", actor, null, null);
     }
   });
 
