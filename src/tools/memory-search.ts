@@ -4,6 +4,11 @@
  * Default mode: 'fts' — tokenize query into words, build FTS5 AND query.
  * Scores via FTS5 bm25(), normalized to 0–1 range.
  * Superseded entries excluded unless include_superseded=true.
+ *
+ * Search modes:
+ *   fts    — FTS5 tokenized search (default)
+ *   exact  — LIKE substring match, fixed score 1.0
+ *   hybrid — currently aliases to 'fts'; reserved for future semantic re-ranking
  */
 
 import type Database from "better-sqlite3";
@@ -97,7 +102,7 @@ export function memorySearch(
   if (mode === "exact") {
     ids = exactSearch(db, input, limit);
   } else {
-    // Both 'fts' and 'hybrid' use FTS5 as primary path
+    // 'fts' and 'hybrid' both use FTS5; 'hybrid' is reserved for future semantic re-ranking
     ids = ftsSearch(db, input, limit);
   }
 
@@ -185,11 +190,11 @@ function ftsSearch(
   }
 
   if (input.date_from) {
-    conditions.push("m.created_at >= ?");
+    conditions.push("COALESCE(m.event_at, m.created_at) >= ?");
   }
 
   if (input.date_to) {
-    conditions.push("m.created_at <= ?");
+    conditions.push("COALESCE(m.event_at, m.created_at) <= ?");
   }
 
   const whereClause =
@@ -264,12 +269,12 @@ function exactSearch(
   }
 
   if (input.date_from) {
-    conditions.push("created_at >= ?");
+    conditions.push("COALESCE(event_at, created_at) >= ?");
     params.push(input.date_from);
   }
 
   if (input.date_to) {
-    conditions.push("created_at <= ?");
+    conditions.push("COALESCE(event_at, created_at) <= ?");
     params.push(input.date_to);
   }
 
@@ -313,11 +318,11 @@ export const memorySearchSchema = {
     },
     date_from: {
       type: "string",
-      description: "Filter memories created at or after this ISO 8601 datetime",
+      description: "Filter by event date (event_at if set, else created_at) >= ISO 8601 datetime",
     },
     date_to: {
       type: "string",
-      description: "Filter memories created at or before this ISO 8601 datetime",
+      description: "Filter by event date (event_at if set, else created_at) <= ISO 8601 datetime",
     },
     min_confidence: {
       type: "number",
@@ -342,7 +347,7 @@ export const memorySearchSchema = {
     mode: {
       type: "string",
       enum: ["fts", "exact", "hybrid"],
-      description: "Search mode: fts=FTS5 tokenized, exact=LIKE substring, hybrid=FTS5 primary (default: fts)",
+      description: "Search mode: fts=FTS5 tokenized (default), exact=LIKE substring, hybrid=alias for fts (semantic re-ranking reserved for future)",
     },
   },
   required: ["query"],

@@ -13,7 +13,7 @@ export function memoryExport(
   throw new Error(
     "memory_export is not implemented yet. " +
       "Planned formats: json, markdown, claude-md. " +
-      "Track progress at https://github.com/nikitacometa/persona-mcp"
+      "Track progress at https://github.com/nikitacometa/mnemon-mcp"
   );
 }
 

@@ -1,11 +1,11 @@
 /**
- * persona-mcp: MCP server entry point.
+ * mnemon-mcp: MCP server entry point.
  *
  * Exposes 6 tools: memory_add, memory_search, memory_update,
  * memory_inspect, memory_export (stub), style_extract (stub).
  *
  * Transport: stdio — suitable for Claude Code MCP config.
- * Database: ~/.persona-mcp/memory.db (SQLite + FTS5, WAL mode).
+ * Database: ~/.mnemon-mcp/memory.db (SQLite + FTS5, WAL mode).
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -44,7 +44,7 @@ const db = openDatabase();
 
 const server = new Server(
   {
-    name: "persona-mcp",
+    name: "mnemon-mcp",
     version: "1.0.0",
   },
   {

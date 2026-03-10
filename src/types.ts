@@ -1,5 +1,5 @@
 /**
- * Shared TypeScript types for persona-mcp.
+ * Shared TypeScript types for mnemon-mcp.
  * All types correspond 1:1 to SQLite schema columns.
  */
 
@@ -189,6 +189,10 @@ export interface MemorySearchResult {
 
 export interface MemorySearchOutput {
   memories: MemorySearchResult[];
+  /**
+   * Number of results returned after post-filter (superseded, confidence, importance).
+   * This is NOT the total count of matching rows in the DB — it equals memories.length.
+   */
   total_found: number;
   query_time_ms: number;
 }

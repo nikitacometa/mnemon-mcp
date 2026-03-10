@@ -1,6 +1,6 @@
 /**
  * KB import pipeline — reads markdown files from mnemon-kb, splits into memories,
- * and inserts into persona-mcp SQLite database.
+ * and inserts into mnemon-mcp SQLite database.
  *
  * Idempotent: uses import_log + file_hash for dedup.
  * Superseding: re-import of changed files supersedes old memories via source_file.

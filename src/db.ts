@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DB_DIR = join(homedir(), ".persona-mcp");
+const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = join(DB_DIR, "memory.db");
 
 /**

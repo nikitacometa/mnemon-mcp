@@ -14,7 +14,7 @@ export function styleExtract(
     "style_extract is not implemented yet. " +
       "Planned: analyze writing patterns and vocabulary from source files, " +
       "store as procedural memory. " +
-      "Track progress at https://github.com/nikitacometa/persona-mcp"
+      "Track progress at https://github.com/nikitacometa/mnemon-mcp"
   );
 }
 

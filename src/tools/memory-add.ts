@@ -144,7 +144,7 @@ export const memoryAddSchema = {
     },
     entity_name: {
       type: "string",
-      description: "Name of the entity (e.g. 'nikita', 'persona-mcp')",
+      description: "Name of the entity (e.g. 'nikita', 'mnemon-mcp')",
     },
     event_at: {
       type: "string",
