@@ -8,8 +8,8 @@ description: mnemon-mcp — persistent layered memory MCP server for AI agents
 MCP server providing persistent layered memory for AI agents.
 SQLite + FTS5 backend, zero-cloud, stdio transport.
 
-Part of the Mnemon ecosystem. KB lives in `~/dev/mnemon-kb`.
-Task board shared with KB: `~/dev/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
+Part of the Mnemon ecosystem. KB lives in `~/dev/mnemon/mnemon-kb`.
+Task board shared with KB: `~/dev/mnemon/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
 
 ## Commands
 
@@ -23,7 +23,7 @@ npm run import:kb  # import mnemon-kb markdown → SQLite (skip unchanged)
 
 Full re-import (ignore hashes, rewrite all):
 ```bash
-npx tsx src/import/cli.ts --kb-path ~/dev/mnemon-kb --force
+npx tsx src/import/cli.ts --kb-path ~/dev/mnemon/mnemon-kb --force
 ```
 
 Smoke test (verify server responds to JSON-RPC):
@@ -101,7 +101,7 @@ In `~/.claude/mcp.json`:
   "mcpServers": {
     "mnemon-mcp": {
       "command": "node",
-      "args": ["/Users/nikitagorokhov/dev/mnemon-mcp/dist/index.js"]
+      "args": ["/Users/nikitagorokhov/dev/mnemon/mnemon-mcp/dist/index.js"]
     }
   }
 }
@@ -142,7 +142,7 @@ When `memory_update(supersede=true)`:
 1. **Never write to stdout from MCP tools** — `console.log()` breaks JSON-RPC stdio transport. Use `console.error()` or write to a file for debugging
 2. **Build before committing** if `src/` changed: `npm run build`
 3. **Run tests before committing**: `npm test`
-4. **Sync with KB** — after schema changes, update `~/dev/mnemon-kb/ai-tools/mnemon-mcp-schema.md`
+4. **Sync with KB** — after schema changes, update `~/dev/mnemon/mnemon-kb/ai-tools/mnemon-mcp-schema.md`
 
 ## Conventions
 
