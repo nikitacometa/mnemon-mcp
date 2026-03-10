@@ -43,13 +43,24 @@ function escapeFtsToken(token: string): string {
  * (graceful degradation — better to search with stop words than return nothing).
  */
 function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
+  // Split on whitespace AND em/en-dash so "феврале–марте" → two tokens
   const rawTokens = query
     .trim()
-    .split(/\s+/)
+    .split(/[\s\u2013\u2014\u2015—–]+/)
     .filter((t) => t.length > 0);
 
-  // Filter stop words, keeping original tokens as fallback
-  const contentTokens = rawTokens.filter((t) => !isStopWord(t.toLowerCase()));
+  // Filter stop words. Strip trailing punctuation before lookup so "Никиты?" → "никиты"
+  const normalizeForStopword = (t: string): string =>
+    t.replace(/[?!.,;:—–\u2014\u2013]+$/, "").toLowerCase();
+  const contentTokens = rawTokens.filter((t) => {
+    const norm = normalizeForStopword(t);
+    // Drop stop words
+    if (isStopWord(norm)) return false;
+    // Drop single chars and 1-2 digit standalone numbers (e.g. "1", "03")
+    if (norm.length <= 1) return false;
+    if (/^\d{1,2}$/.test(norm)) return false;
+    return true;
+  });
   const effectiveTokens = contentTokens.length > 0 ? contentTokens : rawTokens;
 
   const ftsTokens = effectiveTokens
@@ -59,10 +70,16 @@ function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
       // Stem the token for better morphological matching
       // e.g. "субличностях" → stem "субличн" → "субличн"* matches "субличность"
       const stemmed = stemWord(escaped);
-      // Use the shorter of stemmed/original for prefix matching (wider recall)
-      const prefix = stemmed.length < escaped.length ? stemmed : escaped;
-      if (prefix.length >= 3) {
-        return `"${prefix}"*`;
+      // Use the shorter of stemmed/original for prefix matching (wider recall).
+      // If stem is ≥3 chars, use stem* for morphological coverage.
+      // If stem is too short (e.g. "Юля"→"юл"), fall back to escaped* if escaped ≥3.
+      // This ensures short proper names like "Юле" still get prefix matching.
+      const stem = stemmed.length < escaped.length ? stemmed : escaped;
+      if (stem.length >= 3) {
+        return `"${stem}"*`;
+      }
+      if (escaped.length >= 3) {
+        return `"${escaped}"*`;
       }
       return `"${escaped}"`;
     })
@@ -142,8 +159,8 @@ export function memorySearch(
     .all(...idList);
 
   // Map back scores, boost by importance for ranking
-  // Formula: final_score = bm25_score * (0.7 + 0.3 * importance)
-  // Compressed range: content relevance (BM25) dominates, importance is a mild tiebreaker
+  // Formula: final_score = bm25_score * (0.5 + 0.5 * importance)
+  // Wider range: separates high-importance (0.9→0.95) from low-importance (0.2→0.60) entries
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
@@ -155,7 +172,7 @@ export function memorySearch(
     })
     .map((row) => {
       const bm25Score = scoreMap.get(row.id) ?? 0;
-      const importanceBoost = 0.7 + 0.3 * row.importance;
+      const importanceBoost = 0.5 + 0.5 * row.importance;
       return {
       id: row.id,
       layer: row.layer as Layer,
@@ -238,10 +255,10 @@ function ftsSearch(
   const whereClause =
     conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
 
-  // Field weights for bm25(): title=5x, content=1x, entity_name=3x
-  // This boosts matches in title/entity_name over body content
+  // Field weights for bm25(): title=3x, content=1x, entity_name=2x
+  // Reduced title boost to prevent false positives when common words appear in titles
   const sql = `
-    SELECT fts.id, bm25(memories_fts, 5.0, 1.0, 3.0) AS rank
+    SELECT fts.id, bm25(memories_fts, 3.0, 1.0, 2.0) AS rank
     FROM memories_fts fts
     JOIN memories m ON fts.id = m.id
     WHERE memories_fts MATCH ?
@@ -265,12 +282,17 @@ function ftsSearch(
     const rows = db.prepare<unknown[], FtsRow>(sql).all(...params);
     const results = rows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) }));
 
-    // Fallback: if AND returns nothing and query has multiple tokens, retry with OR
-    if (results.length === 0 && input.query.trim().split(/\s+/).length > 1) {
+    // Supplement with OR results when AND returns fewer than limit results.
+    // This fills the result set when AND is too restrictive (misses partial matches).
+    if (results.length < limit && input.query.trim().split(/\s+/).length > 1) {
       const orQuery = buildFtsQuery(input.query, "OR");
       const orParams = [orQuery, ...params.slice(1)];
       const orRows = db.prepare<unknown[], FtsRow>(sql).all(...orParams);
-      return orRows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) * 0.8 }));
+      const andIds = new Set(results.map((r) => r.id));
+      const orOnly = orRows
+        .filter((r) => !andIds.has(r.id))
+        .map((r) => ({ id: r.id, score: normalizeBm25(r.rank) * 0.8 }));
+      return [...results, ...orOnly];
     }
 
     return results;
