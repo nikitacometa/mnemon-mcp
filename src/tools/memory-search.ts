@@ -140,7 +140,9 @@ export function memorySearch(
     )
     .all(...idList);
 
-  // Map back scores and filter based on superseded flag
+  // Map back scores, boost by importance for ranking
+  // Formula: final_score = bm25_score * (0.5 + 0.5 * importance)
+  // This gives high-importance memories (0.9) a 15% advantage over low-importance (0.6)
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
@@ -150,13 +152,16 @@ export function memorySearch(
       if (input.min_importance !== undefined && row.importance < input.min_importance) return false;
       return true;
     })
-    .map((row) => ({
+    .map((row) => {
+      const bm25Score = scoreMap.get(row.id) ?? 0;
+      const importanceBoost = 0.5 + 0.5 * row.importance;
+      return {
       id: row.id,
       layer: row.layer as Layer,
       title: row.title,
       content: row.content,
       snippet: makeSnippet(row.content),
-      score: scoreMap.get(row.id) ?? 0,
+      score: bm25Score * importanceBoost,
       entity_type: row.entity_type as EntityType | null,
       entity_name: row.entity_name,
       confidence: row.confidence,
@@ -164,7 +169,8 @@ export function memorySearch(
       scope: row.scope,
       created_at: row.created_at,
       event_at: row.event_at,
-    }))
+    };
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
@@ -231,13 +237,15 @@ function ftsSearch(
   const whereClause =
     conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
 
+  // Field weights for bm25(): title=5x, content=1x, entity_name=3x
+  // This boosts matches in title/entity_name over body content
   const sql = `
-    SELECT fts.id, fts.rank
+    SELECT fts.id, bm25(memories_fts, 5.0, 1.0, 3.0) AS rank
     FROM memories_fts fts
     JOIN memories m ON fts.id = m.id
     WHERE memories_fts MATCH ?
       ${whereClause}
-    ORDER BY fts.rank
+    ORDER BY rank
     LIMIT ?
   `;
 
