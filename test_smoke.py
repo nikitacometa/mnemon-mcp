@@ -6,11 +6,12 @@ import subprocess
 import sys
 import time
 
-DB_PATH = os.path.expanduser("~/.mnemon-mcp/memory.db")
+DB_PATH = "/tmp/mnemon-mcp-smoke-test.db"
 
-# Clean previous test DB
-if os.path.exists(DB_PATH):
-    os.remove(DB_PATH)
+# Clean previous test DB (safe — uses /tmp, never touches production)
+for f in [DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"]:
+    if os.path.exists(f):
+        os.remove(f)
 
 MESSAGES = [
     {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -84,6 +85,7 @@ proc = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
+    env={**os.environ, "MNEMON_DB_PATH": DB_PATH},
 )
 
 results = {}

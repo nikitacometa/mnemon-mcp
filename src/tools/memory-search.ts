@@ -25,7 +25,8 @@ const SNIPPET_TOKENS = 64;
 
 /** Escape FTS5 special characters to prevent syntax errors */
 function escapeFtsToken(token: string): string {
-  return token.replace(/["^*]/g, "");
+  // Remove all FTS5 query syntax chars: quotes, prefix, column filter, grouping, negation
+  return token.replace(/["^*():]/g, "").replace(/\b(AND|OR|NOT|NEAR)\b/gi, "");
 }
 
 /**
@@ -151,6 +152,17 @@ export function memorySearch(
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
+  // Update access tracking for returned results
+  if (memories.length > 0) {
+    const updateIds = memories.map((m) => m.id);
+    const ph = updateIds.map(() => "?").join(", ");
+    db.prepare(
+      `UPDATE memories SET access_count = access_count + 1,
+              last_accessed = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE id IN (${ph})`
+    ).run(...updateIds);
+  }
+
   return {
     memories,
     total_found: memories.length,
@@ -175,6 +187,9 @@ function ftsSearch(
   if (!input.include_superseded) {
     conditions.push("m.superseded_by IS NULL");
   }
+
+  // Exclude expired memories
+  conditions.push("(m.expires_at IS NULL OR m.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))");
 
   if (input.layers && input.layers.length > 0) {
     const placeholders = input.layers.map(() => "?").join(", ");
@@ -251,6 +266,9 @@ function exactSearch(
   if (!input.include_superseded) {
     conditions.push("superseded_by IS NULL");
   }
+
+  // Exclude expired memories
+  conditions.push("(expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))");
 
   if (input.layers && input.layers.length > 0) {
     const placeholders = input.layers.map(() => "?").join(", ");

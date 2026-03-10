@@ -170,45 +170,51 @@ function processFile(
   let created = 0;
   let superseded = 0;
 
-  if (effectiveMapping.split === "whole") {
-    // Import as single memory
-    const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
-    if (dryRun) {
-      if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (whole), layer=${input.layer}`);
-      return { sections: 1, created: 1, superseded: 0, status: "imported" };
-    }
-    const result = memoryAdd(db, input);
-    created = 1;
-    superseded = result.superseded_ids?.length ?? 0;
-  } else {
-    // Split by heading
-    const level = effectiveMapping.split === "h2" ? 2 : 3;
-    const sections = splitByHeading(parsed.body, level);
-
-    if (sections.length === 0) {
-      // File has no headings at the specified level — import as whole
+  try {
+    if (effectiveMapping.split === "whole") {
+      // Import as single memory
       const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
       if (dryRun) {
-        if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (no headings), layer=${input.layer}`);
+        if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (whole), layer=${input.layer}`);
         return { sections: 1, created: 1, superseded: 0, status: "imported" };
       }
       const result = memoryAdd(db, input);
       created = 1;
       superseded = result.superseded_ids?.length ?? 0;
     } else {
-      for (const section of sections) {
-        if (!section.content.trim()) continue;
-        const input = buildMemoryInput(section, "", effectiveMapping, sourcePath, filename);
+      // Split by heading
+      const level = effectiveMapping.split === "h2" ? 2 : 3;
+      const sections = splitByHeading(parsed.body, level);
+
+      if (sections.length === 0) {
+        // File has no headings at the specified level — import as whole
+        const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
         if (dryRun) {
-          if (verbose) console.log(`  DRY: ${sourcePath}#${section.title} → layer=${input.layer}`);
-          created++;
-          continue;
+          if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (no headings), layer=${input.layer}`);
+          return { sections: 1, created: 1, superseded: 0, status: "imported" };
         }
         const result = memoryAdd(db, input);
-        created++;
-        superseded += result.superseded_ids?.length ?? 0;
+        created = 1;
+        superseded = result.superseded_ids?.length ?? 0;
+      } else {
+        for (const section of sections) {
+          if (!section.content.trim()) continue;
+          const input = buildMemoryInput(section, "", effectiveMapping, sourcePath, filename);
+          if (dryRun) {
+            if (verbose) console.log(`  DRY: ${sourcePath}#${section.title} → layer=${input.layer}`);
+            created++;
+            continue;
+          }
+          const result = memoryAdd(db, input);
+          created++;
+          superseded += result.superseded_ids?.length ?? 0;
+        }
       }
     }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (verbose) console.error(`  ERROR: ${sourcePath}: ${errMsg}`);
+    return { sections: 0, created: 0, superseded: 0, status: "error", error: errMsg };
   }
 
   if (!dryRun) {

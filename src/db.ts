@@ -9,14 +9,17 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const DB_DIR = join(homedir(), ".mnemon-mcp");
-const DB_PATH = join(DB_DIR, "memory.db");
+const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
  * Idempotent — safe to call on every server startup.
  */
 export function openDatabase(dbPath: string = DB_PATH): Database.Database {
-  mkdirSync(DB_DIR, { recursive: true });
+  if (dbPath !== ":memory:") {
+    const dir = join(dbPath, "..");
+    mkdirSync(dir, { recursive: true });
+  }
 
   const db = new Database(dbPath);
 
@@ -111,7 +114,7 @@ function runMigrations(db: Database.Database): void {
     -- =========================================================
     -- FTS5: full-text search across title, content, entity_name
     -- Standalone (not content=) for simpler trigger-based sync
-    -- unicode61 tokenizer: Cyrillic + Thai support
+    -- unicode61 tokenizer: Cyrillic + Latin support (no morphological stemming)
     -- =========================================================
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,
