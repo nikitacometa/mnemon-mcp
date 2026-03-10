@@ -8,11 +8,12 @@
  * Language detection: Cyrillic chars → Russian, otherwise → English.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 const ruModule = require("snowball-stemmer.jsx/dest/russian-stemmer.common.js") as {
   RussianStemmer: new () => SnowballStemmer;
 };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const enModule = require("snowball-stemmer.jsx/dest/english-stemmer.common.js") as {
   EnglishStemmer: new () => SnowballStemmer;
 };
