@@ -1,0 +1,62 @@
+/**
+ * Stop words for FTS5 query preprocessing.
+ * Removed before building MATCH expression to prevent over-restrictive AND queries.
+ *
+ * Two sets: Russian (personal KB, journal, Cyrillic) and English (technical content).
+ * All tokens stored lowercase — caller must .toLowerCase() before lookup.
+ */
+
+export const RUSSIAN_STOP_WORDS = new Set([
+  // Pronouns
+  "я", "ты", "он", "она", "оно", "мы", "вы", "они",
+  "мне", "тебе", "ему", "ей", "нам", "вам", "им",
+  "меня", "тебя", "его", "её", "нас", "вас", "их",
+  "мой", "моя", "моё", "мои", "твой", "твоя", "твоё", "твои",
+  "наш", "наша", "наше", "наши", "ваш", "ваша", "ваше", "ваши",
+  "свой", "своя", "своё", "свои",
+  "этот", "эта", "это", "эти", "тот", "та", "те",
+  "себя", "себе", "сам", "сама", "само", "сами",
+  // Auxiliary verbs
+  "быть", "есть", "был", "была", "было", "были",
+  "буду", "будет", "будут", "будем", "будете",
+  "является", "являются",
+  // Prepositions
+  "в", "на", "с", "из", "у", "к", "о", "об", "по", "до",
+  "за", "под", "над", "при", "без", "для", "через", "после",
+  "перед", "между", "во", "со", "ко", "про",
+  // Conjunctions and particles
+  "и", "или", "но", "а", "да", "же", "ли", "бы", "вот", "уже",
+  "что", "как", "так", "тут", "там", "тоже", "также", "ещё",
+  "не", "ни", "нет", "то", "если", "когда", "чтобы", "хотя",
+  // Question words (navigational — no semantic value in search)
+  "кто", "где", "куда", "откуда", "зачем", "почему", "чем",
+  "какой", "какая", "какое", "какие", "который", "которая", "которое", "которые",
+  "сколько", "насколько",
+]);
+
+export const ENGLISH_STOP_WORDS = new Set([
+  // Articles
+  "a", "an", "the",
+  // Auxiliary verbs
+  "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did",
+  "will", "would", "can", "could", "shall", "should", "may", "might", "must",
+  // Pronouns
+  "i", "me", "my", "we", "our", "you", "your", "he", "she", "it", "they",
+  "him", "his", "her", "its", "us", "their", "them",
+  "this", "that", "these", "those",
+  // Prepositions
+  "in", "on", "at", "to", "from", "of", "for", "with", "by",
+  "about", "into", "through", "during", "before", "after",
+  "above", "below", "between", "under", "over",
+  // Conjunctions and particles
+  "and", "or", "but", "not", "no", "so", "if", "as", "than",
+  "also", "already", "still", "just", "very", "more", "most",
+  // Question words (navigational)
+  "what", "who", "which", "where", "when", "why", "how", "whose",
+]);
+
+/** Check if a token (lowercase) is a stop word in either language */
+export function isStopWord(token: string): boolean {
+  return RUSSIAN_STOP_WORDS.has(token) || ENGLISH_STOP_WORDS.has(token);
+}

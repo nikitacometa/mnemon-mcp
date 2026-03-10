@@ -19,6 +19,8 @@ import type {
   MemorySearchOutput,
   MemorySearchResult,
 } from "../types.js";
+import { isStopWord } from "../stop-words.js";
+import { stemWord } from "../stemmer.js";
 
 const DEFAULT_LIMIT = 10;
 const SNIPPET_TOKENS = 64;
@@ -31,31 +33,45 @@ function escapeFtsToken(token: string): string {
 
 /**
  * Build FTS5 MATCH query from user query string.
- * Splits on whitespace, escapes each token, applies prefix matching
- * for tokens ≥ 4 chars to handle morphological variants (Cyrillic/Thai).
+ * 1. Splits on whitespace
+ * 2. Removes stop words (Russian + English) to avoid over-restrictive AND queries
+ * 3. Escapes FTS5 special chars
+ * 4. Applies prefix matching for tokens ≥ 4 chars (morphological variants)
+ *
+ * If ALL tokens are stop words, falls back to using original tokens
+ * (graceful degradation — better to search with stop words than return nothing).
  */
 function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
-  const tokens = query
+  const rawTokens = query
     .trim()
     .split(/\s+/)
-    .filter((t) => t.length > 0)
+    .filter((t) => t.length > 0);
+
+  // Filter stop words, keeping original tokens as fallback
+  const contentTokens = rawTokens.filter((t) => !isStopWord(t.toLowerCase()));
+  const effectiveTokens = contentTokens.length > 0 ? contentTokens : rawTokens;
+
+  const ftsTokens = effectiveTokens
     .map((t) => {
       const escaped = escapeFtsToken(t);
       if (!escaped) return "";
-      // Use prefix matching for longer tokens to handle morphology
-      // e.g. "випассана" matches "випассану", "випассаны", etc.
-      if (escaped.length >= 4) {
-        return `"${escaped}"*`;
+      // Stem the token for better morphological matching
+      // e.g. "субличностях" → stem "субличн" → "субличн"* matches "субличность"
+      const stemmed = stemWord(escaped);
+      // Use the shorter of stemmed/original for prefix matching (wider recall)
+      const prefix = stemmed.length < escaped.length ? stemmed : escaped;
+      if (prefix.length >= 3) {
+        return `"${prefix}"*`;
       }
       return `"${escaped}"`;
     })
     .filter((t) => t !== "" && t !== '""');
 
-  if (tokens.length === 0) {
+  if (ftsTokens.length === 0) {
     throw new Error("Query must contain at least one non-empty term");
   }
 
-  return tokens.join(` ${operator} `);
+  return ftsTokens.join(` ${operator} `);
 }
 
 /** Normalize BM25 score (negative rank) to 0–1 */

@@ -282,6 +282,70 @@ describe("memory_inspect", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Stop word filtering (T-091)
+// ---------------------------------------------------------------------------
+
+describe("stop word filtering", () => {
+  it("strips Russian navigational words from query", () => {
+    memoryAdd(db, { content: "Серии привычек хранятся в трекере", layer: "semantic" });
+    // "Где хранятся серии привычек" — "Где" is a stop word, should be stripped
+    const result = memorySearch(db, { query: "Где хранятся серии привычек" });
+    expect(result.memories.length).toBeGreaterThan(0);
+    expect(result.memories[0]!.content).toContain("привычек");
+  });
+
+  it("strips Russian question words: какой, сколько, что", () => {
+    memoryAdd(db, { content: "Дневная норма калорий составляет 2200 ккал", layer: "semantic" });
+    // "Какая дневная норма калорий" — "Какая" is a stop word
+    const result = memorySearch(db, { query: "Какая дневная норма калорий" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+
+  it("strips English stop words from queries", () => {
+    memoryAdd(db, { content: "Human Design profile type is Generator 5/1", layer: "semantic" });
+    // "What is the Human Design profile" — What/is/the are stop words
+    const result = memorySearch(db, { query: "What is the Human Design profile" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+
+  it("handles mixed Russian/English queries with stop words", () => {
+    memoryAdd(db, { content: "Практика випассана с 2024 года", layer: "semantic" });
+    // "Что это за практика випассана" — "Что", "это", "за" are stop words
+    const result = memorySearch(db, { query: "Что это за практика випассана" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to original tokens when all are stop words", () => {
+    memoryAdd(db, { content: "это был он а не она", layer: "episodic" });
+    // All stop words — should fall back to using them
+    const result = memorySearch(db, { query: "это был он" });
+    // May or may not find (depends on FTS indexing of these short words)
+    // Key: should NOT throw
+    expect(result.query_time_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles prepositions in context: 'про медитацию'", () => {
+    memoryAdd(db, { content: "Книга про медитацию и осознанность", layer: "resource" });
+    // "про" is a stop word, "медитацию" has semantic value
+    const result = memorySearch(db, { query: "про медитацию" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+
+  it("stemmer matches morphological variants: субличность/субличностях", () => {
+    memoryAdd(db, { content: "Работа с субличностями через IFS терапию", layer: "semantic" });
+    // Query uses different word form — stemmer should reduce both to "субличн"
+    const result = memorySearch(db, { query: "субличность" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+
+  it("stemmer matches English variants: meditation/meditating", () => {
+    memoryAdd(db, { content: "Daily meditation practice improves focus", layer: "semantic" });
+    const result = memorySearch(db, { query: "meditating daily" });
+    expect(result.memories.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Validation edge cases
 // ---------------------------------------------------------------------------
 

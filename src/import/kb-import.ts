@@ -86,7 +86,7 @@ function logImport(
   errors: string[] = []
 ): void {
   db.prepare(
-    `INSERT INTO import_log (source_path, source_type, file_hash, memories_created, memories_updated, status, errors)
+    `INSERT OR REPLACE INTO import_log (source_path, source_type, file_hash, memories_created, memories_updated, status, errors)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(sourcePath, sourceType, hash, created, updated, status, JSON.stringify(errors));
 }
@@ -97,9 +97,12 @@ function buildMemoryInput(
   fullContent: string,
   mapping: FileMapping,
   sourcePath: string,
-  filename: string
+  filename: string,
+  description?: string
 ): MemoryAddInput {
-  const content = section ? `## ${section.title}\n\n${section.content}` : fullContent;
+  // For sections, prepend file description for FTS discoverability (T-093)
+  const descPrefix = section && description ? `[${description}]\n\n` : "";
+  const content = section ? `${descPrefix}## ${section.title}\n\n${section.content}` : fullContent;
   const title = section?.title ?? basename(filename, ".md");
 
   let entityName = mapping.entity_name;
@@ -170,10 +173,16 @@ function processFile(
   let created = 0;
   let superseded = 0;
 
+  // Prepend frontmatter description to body so it gets indexed in FTS5 (T-093)
+  const descriptionPrefix = parsed.frontmatter.description
+    ? `${parsed.frontmatter.description}\n\n`
+    : "";
+  const bodyWithDescription = descriptionPrefix + parsed.body;
+
   try {
     if (effectiveMapping.split === "whole") {
       // Import as single memory
-      const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
+      const input = buildMemoryInput(null, bodyWithDescription, effectiveMapping, sourcePath, filename);
       if (dryRun) {
         if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (whole), layer=${input.layer}`);
         return { sections: 1, created: 1, superseded: 0, status: "imported" };
@@ -186,9 +195,12 @@ function processFile(
       const level = effectiveMapping.split === "h2" ? 2 : 3;
       const sections = splitByHeading(parsed.body, level);
 
+      const fmDescription = typeof parsed.frontmatter.description === "string"
+        ? parsed.frontmatter.description : undefined;
+
       if (sections.length === 0) {
         // File has no headings at the specified level — import as whole
-        const input = buildMemoryInput(null, parsed.body, effectiveMapping, sourcePath, filename);
+        const input = buildMemoryInput(null, bodyWithDescription, effectiveMapping, sourcePath, filename);
         if (dryRun) {
           if (verbose) console.log(`  DRY: ${sourcePath} → 1 record (no headings), layer=${input.layer}`);
           return { sections: 1, created: 1, superseded: 0, status: "imported" };
@@ -199,7 +211,7 @@ function processFile(
       } else {
         for (const section of sections) {
           if (!section.content.trim()) continue;
-          const input = buildMemoryInput(section, "", effectiveMapping, sourcePath, filename);
+          const input = buildMemoryInput(section, "", effectiveMapping, sourcePath, filename, fmDescription);
           if (dryRun) {
             if (verbose) console.log(`  DRY: ${sourcePath}#${section.title} → layer=${input.layer}`);
             created++;

@@ -1,0 +1,59 @@
+/**
+ * Snowball stemmer wrapper with automatic Russian/English language detection.
+ *
+ * Used at query time to improve FTS5 prefix matching:
+ * - "субличностях" → stem "субличн" → FTS5 "субличн"* matches "субличность"
+ * - "meditation" → stem "medit" → FTS5 "medit"* matches "meditating"
+ *
+ * Language detection: Cyrillic chars → Russian, otherwise → English.
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ruModule = require("snowball-stemmer.jsx/dest/russian-stemmer.common.js") as {
+  RussianStemmer: new () => SnowballStemmer;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const enModule = require("snowball-stemmer.jsx/dest/english-stemmer.common.js") as {
+  EnglishStemmer: new () => SnowballStemmer;
+};
+
+interface SnowballStemmer {
+  stemWord(word: string): string;
+}
+
+const ruStemmer = new ruModule.RussianStemmer();
+const enStemmer = new enModule.EnglishStemmer();
+
+const CYRILLIC_RE = /[\u0400-\u04FF]/;
+
+/** Detect if a word contains Cyrillic characters */
+function isCyrillic(word: string): boolean {
+  return CYRILLIC_RE.test(word);
+}
+
+/**
+ * Stem a single word using the appropriate Snowball stemmer.
+ * Returns the stemmed form (lowercase).
+ *
+ * If the stem is empty or longer than the original, returns the original lowercase.
+ */
+export function stemWord(word: string): string {
+  const lower = word.toLowerCase();
+  const stemmer = isCyrillic(lower) ? ruStemmer : enStemmer;
+  const stemmed = stemmer.stemWord(lower);
+
+  // Guard: if stemming produced nothing or made it longer, use original
+  if (!stemmed || stemmed.length > lower.length) {
+    return lower;
+  }
+
+  return stemmed;
+}
+
+/**
+ * Stem all words in a string. Returns array of stemmed tokens.
+ * Preserves order, removes empty results.
+ */
+export function stemTokens(tokens: string[]): string[] {
+  return tokens.map(stemWord).filter((t) => t.length > 0);
+}

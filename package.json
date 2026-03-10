@@ -10,7 +10,7 @@
     "start": "node dist/index.js",
     "import:kb": "tsx src/import/cli.ts --kb-path ~/dev/mnemon/mnemon-kb",
     "test": "vitest run",
-    "db:backup": "sqlite3 ~/.mnemon-mcp/memory.db '.backup ~/.mnemon-mcp/memory.db.bak' && echo 'Backup saved to ~/.mnemon-mcp/memory.db.bak'"
+    "db:backup": "bash -c \"sqlite3 $HOME/.mnemon-mcp/memory.db '.backup $HOME/.mnemon-mcp/memory.db.bak' && echo 'Backup saved to ~/.mnemon-mcp/memory.db.bak'\""
   },
   "keywords": [
     "mcp",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^12.6.2",
+    "snowball-stemmer.jsx": "^0.2.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
