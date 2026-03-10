@@ -1,4 +1,4 @@
-"""Smoke test for persona-mcp MCP server."""
+"""Smoke test for mnemon-mcp MCP server."""
 import json
 import os
 import shutil
@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-DB_PATH = os.path.expanduser("~/.persona-mcp/memory.db")
+DB_PATH = os.path.expanduser("~/.mnemon-mcp/memory.db")
 
 # Clean previous test DB
 if os.path.exists(DB_PATH):

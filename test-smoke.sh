@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Smoke test for persona-mcp MCP server
+# Smoke test for mnemon-mcp MCP server
 set -eu
 cd "$(dirname "$0")"
 
 # Clean previous test DB
-rm -f ~/.persona-mcp/memory.db
+rm -f ~/.mnemon-mcp/memory.db
 
 # Build
 npm run build 2>&1 | tail -1
@@ -85,4 +85,4 @@ print('=== Smoke Test Complete ===')
 "
 
 echo ""
-echo "DB size: $(ls -lh ~/.persona-mcp/memory.db 2>/dev/null | awk '{print $5}')"
+echo "DB size: $(ls -lh ~/.mnemon-mcp/memory.db 2>/dev/null | awk '{print $5}')"
