@@ -222,17 +222,8 @@ export const EXTERNAL_FILES: Array<{
   path: string;
   mapping: FileMapping;
 }> = [
-  {
-    path: "~/.claude/CLAUDE.md",
-    mapping: {
-      layer: "procedural",
-      entity_type: "rule",
-      importance: 1.0,
-      confidence: 1.0,
-      split: "h2",
-      scope: "claude-code",
-    },
-  },
+  // ~/.claude/CLAUDE.md removed: procedural rules belong in CLAUDE.md context,
+  // not in FTS5 search — they pollute results for factual/episodic queries
 ];
 
 /** Files/patterns to explicitly skip */

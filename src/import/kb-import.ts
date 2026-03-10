@@ -100,9 +100,14 @@ function buildMemoryInput(
   filename: string,
   description?: string
 ): MemoryAddInput {
-  // For sections, prepend file description for FTS discoverability (T-093)
+  // Prepend file stem (e.g. "human-design") + description for FTS discoverability
+  // File stem helps find files by name (e.g. query "Human Design" matches "human-design")
+  const fileStem = basename(filename, ".md");
   const descPrefix = section && description ? `[${description}]\n\n` : "";
-  const content = section ? `${descPrefix}## ${section.title}\n\n${section.content}` : fullContent;
+  const fileTag = `[file: ${fileStem}] `;
+  const content = section
+    ? `${fileTag}${descPrefix}## ${section.title}\n\n${section.content}`
+    : `${fileTag}${fullContent}`;
   const title = section?.title ?? basename(filename, ".md");
 
   let entityName = mapping.entity_name;

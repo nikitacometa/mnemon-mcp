@@ -25,10 +25,11 @@ import { stemWord } from "../stemmer.js";
 const DEFAULT_LIMIT = 10;
 const SNIPPET_TOKENS = 64;
 
-/** Escape FTS5 special characters to prevent syntax errors */
+/** Escape FTS5 special characters and trailing punctuation to prevent syntax errors */
 function escapeFtsToken(token: string): string {
-  // Remove all FTS5 query syntax chars: quotes, prefix, column filter, grouping, negation
-  return token.replace(/["^*():]/g, "").replace(/\b(AND|OR|NOT|NEAR)\b/gi, "");
+  // Remove FTS5 query syntax chars + general punctuation from natural language queries
+  // Note: hyphens (-) NOT stripped — unicode61 tokenizer uses them as separators
+  return token.replace(/["^*():?!.,;—–\/]/g, "").replace(/\b(AND|OR|NOT|NEAR)\b/gi, "");
 }
 
 /**
@@ -141,8 +142,8 @@ export function memorySearch(
     .all(...idList);
 
   // Map back scores, boost by importance for ranking
-  // Formula: final_score = bm25_score * (0.5 + 0.5 * importance)
-  // This gives high-importance memories (0.9) a 15% advantage over low-importance (0.6)
+  // Formula: final_score = bm25_score * (0.7 + 0.3 * importance)
+  // Compressed range: content relevance (BM25) dominates, importance is a mild tiebreaker
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
@@ -154,7 +155,7 @@ export function memorySearch(
     })
     .map((row) => {
       const bm25Score = scoreMap.get(row.id) ?? 0;
-      const importanceBoost = 0.5 + 0.5 * row.importance;
+      const importanceBoost = 0.7 + 0.3 * row.importance;
       return {
       id: row.id,
       layer: row.layer as Layer,
