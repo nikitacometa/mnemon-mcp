@@ -22,7 +22,6 @@ export type MemorySource =
 
 export type SearchMode = "fts" | "exact" | "hybrid";
 
-export type ExportFormat = "json" | "markdown" | "claude-md";
 
 // ---------------------------------------------------------------------------
 // Row types (mirror SQLite columns)
@@ -141,24 +140,6 @@ export interface MemoryInspectInput {
   include_history?: boolean;
 }
 
-export interface MemoryExportInput {
-  format: ExportFormat;
-  layers?: Layer[];
-  scope?: string;
-  include_superseded?: boolean;
-  date_from?: string;
-  date_to?: string;
-  output_path?: string;
-}
-
-export interface StyleExtractInput {
-  source: "file" | "directory" | "inline";
-  path?: string;
-  content?: string;
-  file_glob?: string;
-  store_as_procedural?: boolean;
-  scope?: string;
-}
 
 // ---------------------------------------------------------------------------
 // Tool output types
@@ -217,21 +198,3 @@ export interface MemoryInspectOutput {
   superseded_chain?: MemoryRow[];
 }
 
-export interface MemoryExportOutput {
-  format: ExportFormat;
-  memories_exported: number;
-  content?: string;
-  output_path?: string;
-}
-
-export interface StyleExtractOutput {
-  profile: {
-    tone: string;
-    sentence_patterns: string[];
-    vocabulary_markers: string[];
-    anti_patterns: string[];
-    system_prompt: string;
-  };
-  stored_memory_id?: string;
-  samples_analyzed: number;
-}

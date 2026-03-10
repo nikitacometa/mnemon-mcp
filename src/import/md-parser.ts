@@ -97,11 +97,24 @@ export function splitByHeading(body: string, level: 2 | 3): Section[] {
   return sections;
 }
 
-/** Extract date from filename like 2026-03-05.md → ISO string */
+/** Extract date from filename: 2026-03-05.md, 2025-q1.md, 2024.md → ISO string */
 export function extractDateFromFilename(filename: string): string | null {
-  const match = filename.match(/(\d{4}-\d{2}-\d{2})/);
-  if (!match) return null;
-  return `${match[1]}T00:00:00Z`;
+  // Daily: 2026-03-05.md
+  const daily = filename.match(/(\d{4}-\d{2}-\d{2})/);
+  if (daily) return `${daily[1]}T00:00:00Z`;
+
+  // Quarterly: 2025-q1.md → first day of quarter
+  const quarterly = filename.match(/(\d{4})-q([1-4])/i);
+  if (quarterly) {
+    const month = String(([1, 4, 7, 10] as const)[(+quarterly[2]! - 1)]).padStart(2, "0");
+    return `${quarterly[1]}-${month}-01T00:00:00Z`;
+  }
+
+  // Yearly: 2024.md
+  const yearly = filename.match(/^(\d{4})\.md$/);
+  if (yearly) return `${yearly[1]}-01-01T00:00:00Z`;
+
+  return null;
 }
 
 /** Compute SHA-256 hash of content */

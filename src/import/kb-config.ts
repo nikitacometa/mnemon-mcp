@@ -112,6 +112,55 @@ export const DIRECTORY_MAPPINGS: DirectoryMapping[] = [
     confidence: 0.9,
     split: "h2",
   },
+  {
+    glob: "telegram/posts.md",
+    layer: "resource",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.2,
+    confidence: 0.9,
+    split: "h2",
+  },
+
+  // ── Semantic — Personal ──
+  {
+    glob: "personal/reflections.md",
+    layer: "semantic",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.7,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "personal/health.md",
+    layer: "semantic",
+    entity_type: "user",
+    entity_name: "nikita",
+    importance: 0.8,
+    confidence: 0.9,
+    split: "h2",
+  },
+
+  // ── Resource — Influences ──
+  {
+    glob: "influences/influences.md",
+    layer: "resource",
+    entity_type: "concept",
+    entity_name: "from-heading",
+    importance: 0.5,
+    confidence: 0.8,
+    split: "h2",
+  },
+  {
+    glob: "influences/readwise-books.md",
+    layer: "resource",
+    entity_type: "concept",
+    entity_name: "from-heading",
+    importance: 0.5,
+    confidence: 0.8,
+    split: "h3",
+  },
 
   // ── Episodic (P3) ──
   {
@@ -226,29 +275,3 @@ export const EXTERNAL_FILES: Array<{
   // not in FTS5 search — they pollute results for factual/episodic queries
 ];
 
-/** Files/patterns to explicitly skip */
-export const SKIP_PATTERNS = [
-  // nutrition/ — only targets.md imported (via DIRECTORY_MAPPINGS)
-  "nutrition/2*.md",
-  "nutrition/*.json",
-  // habits/ — only streaks.md imported (via DIRECTORY_MAPPINGS)
-  "habits/2*.md",
-  "habits/week-*.md",
-  // telegram/ — only channel-profile.md imported (via DIRECTORY_MAPPINGS)
-  "telegram/posts.md",
-  "telegram/prepared-posts.md",
-  "telegram/scheduled.md",
-  "telegram/post-ideas.md",
-  "telegram/content-ideas.md",
-  "language/**",
-  "tasks/**",
-  "meta/**",
-  "eval/**",
-  "ai-tools/**",
-  "tmp/**",
-  "email/**",
-  "finance/**",
-  "content/**",
-  "personal/**",
-  "reference/**",
-];
