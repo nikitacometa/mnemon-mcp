@@ -1,0 +1,52 @@
+{
+  "owner_name": "your-name",
+  "extra_stop_words": [],
+  "mappings": [
+    {
+      "glob": "journal/*.md",
+      "layer": "episodic",
+      "entity_type": "user",
+      "entity_name": "$owner",
+      "importance": 0.6,
+      "confidence": 0.9,
+      "split": "h2"
+    },
+    {
+      "glob": "people/*.md",
+      "layer": "semantic",
+      "entity_type": "person",
+      "entity_name": "from-heading",
+      "importance": 0.8,
+      "confidence": 0.8,
+      "split": "h3"
+    },
+    {
+      "glob": "projects/*.md",
+      "layer": "semantic",
+      "entity_type": "project",
+      "entity_name": "from-heading",
+      "importance": 0.7,
+      "confidence": 0.8,
+      "split": "h2"
+    },
+    {
+      "glob": "knowledge/*.md",
+      "layer": "semantic",
+      "entity_type": "concept",
+      "entity_name": "from-heading",
+      "importance": 0.6,
+      "confidence": 0.8,
+      "split": "h2"
+    },
+    {
+      "glob": "notes/*.md",
+      "layer": "resource",
+      "entity_type": "concept",
+      "entity_name": "from-heading",
+      "importance": 0.5,
+      "confidence": 0.8,
+      "split": "h2"
+    }
+  ],
+  "external_files": []
+}

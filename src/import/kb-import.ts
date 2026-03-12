@@ -15,11 +15,10 @@ import { openDatabase } from "../db.js";
 import { memoryAdd } from "../tools/memory-add.js";
 import type { Layer, EntityType, MemoryAddInput } from "../types.js";
 import {
-  DIRECTORY_MAPPINGS,
-  EXTERNAL_FILES,
   type DirectoryMapping,
   type FileMapping,
 } from "./kb-config.js";
+import { loadConfig, type LoadedConfig } from "./config-loader.js";
 import {
   parseFile,
   splitByHeading,
@@ -29,6 +28,7 @@ import {
 
 export interface ImportOptions {
   kbPath: string;
+  configPath?: string | undefined;
   dryRun?: boolean | undefined;
   singleFile?: string | undefined;
   singleLayer?: Layer | undefined;
@@ -258,6 +258,8 @@ export function runImport(options: ImportOptions): ImportResult {
     throw new Error(`KB path does not exist: ${kbPath}`);
   }
 
+  const config = loadConfig(options.configPath);
+
   const db = dryRun ? openDatabase(":memory:") : openDatabase();
   const result: ImportResult = {
     filesProcessed: 0,
@@ -279,7 +281,7 @@ export function runImport(options: ImportOptions): ImportResult {
     let mapping: FileMapping | undefined;
     const relPath = filePath.startsWith(kbPath) ? relative(kbPath, filePath) : filePath;
 
-    for (const dirMapping of DIRECTORY_MAPPINGS) {
+    for (const dirMapping of config.mappings) {
       const matches = resolveGlob(dirMapping.glob, kbPath);
       if (matches.includes(filePath)) {
         mapping = dirMapping;
@@ -315,7 +317,7 @@ export function runImport(options: ImportOptions): ImportResult {
   }
 
   // Full KB import
-  for (const dirMapping of DIRECTORY_MAPPINGS) {
+  for (const dirMapping of config.mappings) {
     const files = resolveGlob(dirMapping.glob, kbPath);
 
     for (const filePath of files) {
@@ -343,7 +345,7 @@ export function runImport(options: ImportOptions): ImportResult {
   }
 
   // External files
-  for (const ext of EXTERNAL_FILES) {
+  for (const ext of config.externalFiles) {
     const filePath = resolve(expandHome(ext.path));
     if (!existsSync(filePath)) {
       if (verbose) console.log(`  SKIP (not found): ${ext.path}`);

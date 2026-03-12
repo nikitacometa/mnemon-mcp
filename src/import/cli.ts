@@ -14,13 +14,14 @@ import type { Layer } from "../types.js";
 
 function parseArgs(args: string[]): {
   kbPath?: string | undefined;
+  configPath?: string | undefined;
   file?: string | undefined;
   layer?: Layer | undefined;
   dryRun: boolean;
   verbose: boolean;
   force: boolean;
 } {
-  const result: { kbPath?: string | undefined; file?: string | undefined; layer?: Layer | undefined; dryRun: boolean; verbose: boolean; force: boolean } = { dryRun: false, verbose: false, force: false };
+  const result: { kbPath?: string | undefined; configPath?: string | undefined; file?: string | undefined; layer?: Layer | undefined; dryRun: boolean; verbose: boolean; force: boolean } = { dryRun: false, verbose: false, force: false };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -29,6 +30,10 @@ function parseArgs(args: string[]): {
     switch (arg) {
       case "--kb-path":
         result.kbPath = next;
+        i++;
+        break;
+      case "--config":
+        result.configPath = next;
         i++;
         break;
       case "--file":
@@ -100,14 +105,15 @@ function printSummary(result: ImportResult, dryRun: boolean): void {
 const args = parseArgs(process.argv.slice(2));
 
 if (!args.kbPath && !args.file) {
-  console.error("Usage: tsx src/import/cli.ts --kb-path <path> [--dry-run] [--verbose]");
-  console.error("       tsx src/import/cli.ts --file <path> --layer <layer>");
+  console.error("Usage: tsx src/import/cli.ts --kb-path <path> [--config <path>] [--dry-run] [--verbose]");
+  console.error("       tsx src/import/cli.ts --file <path> --layer <layer> [--config <path>]");
   process.exit(1);
 }
 
 try {
   const result = runImport({
     kbPath: args.kbPath ?? ".",
+    configPath: args.configPath,
     singleFile: args.file,
     singleLayer: args.layer,
     dryRun: args.dryRun,

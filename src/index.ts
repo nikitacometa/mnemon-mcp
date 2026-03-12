@@ -28,6 +28,9 @@ import {
   MemoryInspectSchema,
 } from "./validation.js";
 
+import { loadConfig } from "./import/config-loader.js";
+import { addExtraStopWords } from "./stop-words.js";
+
 import type {
   MemoryAddInput,
   MemoryInspectInput,
@@ -40,6 +43,16 @@ import type {
 // ---------------------------------------------------------------------------
 
 const db = openDatabase();
+
+// Load extra stop words from config (e.g. owner name forms)
+try {
+  const config = loadConfig();
+  if (config.extraStopWords.length > 0) {
+    addExtraStopWords(config.extraStopWords);
+  }
+} catch {
+  // Config loading is best-effort for the MCP server — import pipeline handles errors
+}
 
 // ---------------------------------------------------------------------------
 // MCP Server

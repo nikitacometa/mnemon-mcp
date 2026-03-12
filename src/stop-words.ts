@@ -52,8 +52,6 @@ export const RUSSIAN_STOP_WORDS = new Set([
   "случилось", "случился", "случилась", "случились",
   "делал", "делала", "делали", "делало",
   "проходил", "проходила", "прошёл", "прошла", "прошли",
-  // KB owner name — ubiquitous across all documents, no discriminative value
-  "никита", "никиты", "никите", "никиту", "никитой",
   // Generic navigational nouns
   "информация", "информации", "информацию", "информацией",
   "файл", "файла", "файле", "файлу", "файлом", "файлы",
@@ -91,7 +89,17 @@ export const ENGLISH_STOP_WORDS = new Set([
   "what", "who", "which", "where", "when", "why", "how", "whose",
 ]);
 
+/** Extra stop words loaded from config (e.g. owner name forms) */
+const extraStopWords = new Set<string>();
+
+/** Register additional stop words at runtime (from config.extra_stop_words) */
+export function addExtraStopWords(words: string[]): void {
+  for (const w of words) {
+    extraStopWords.add(w.toLowerCase());
+  }
+}
+
 /** Check if a token (lowercase) is a stop word in either language */
 export function isStopWord(token: string): boolean {
-  return RUSSIAN_STOP_WORDS.has(token) || ENGLISH_STOP_WORDS.has(token);
+  return RUSSIAN_STOP_WORDS.has(token) || ENGLISH_STOP_WORDS.has(token) || extraStopWords.has(token);
 }
