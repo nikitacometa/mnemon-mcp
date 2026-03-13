@@ -290,16 +290,18 @@ function ftsSearch(
     LIMIT ?
   `;
 
-  const params: unknown[] = [ftsQuery];
-
+  // Build filter params separately from FTS query for clean OR-fallback reuse
+  const filterParams: unknown[] = [];
   if (input.layers && input.layers.length > 0) {
-    params.push(...input.layers);
+    filterParams.push(...input.layers);
   }
-  if (input.entity_name) params.push(input.entity_name);
-  if (input.scope) params.push(input.scope);
-  if (input.date_from) params.push(input.date_from);
-  if (input.date_to) params.push(input.date_to);
-  params.push(limit * 2); // fetch extra to allow post-filter
+  if (input.entity_name) filterParams.push(input.entity_name);
+  if (input.scope) filterParams.push(input.scope);
+  if (input.date_from) filterParams.push(input.date_from);
+  if (input.date_to) filterParams.push(input.date_to);
+
+  const fetchLimit = limit * 2; // fetch extra to allow post-filter
+  const params: unknown[] = [ftsQuery, ...filterParams, fetchLimit];
 
   try {
     const rows = db.prepare<unknown[], FtsRow>(sql).all(...params);
@@ -309,7 +311,7 @@ function ftsSearch(
     // This fills the result set when AND is too restrictive (misses partial matches).
     if (results.length < limit && input.query.trim().split(/\s+/).length > 1) {
       const orQuery = buildFtsQuery(input.query, "OR");
-      const orParams = [orQuery, ...params.slice(1)];
+      const orParams = [orQuery, ...filterParams, fetchLimit];
       const orRows = db.prepare<unknown[], FtsRow>(sql).all(...orParams);
       const andIds = new Set(results.map((r) => r.id));
       const orOnly = orRows

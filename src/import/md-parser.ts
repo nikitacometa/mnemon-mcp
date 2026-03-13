@@ -43,6 +43,14 @@ export function parseFrontmatter(raw: string): { frontmatter: Frontmatter; body:
     const key = kv[1]!;
     let value: unknown = kv[2]!.trim();
 
+    // Strip surrounding quotes (YAML-style)
+    if (typeof value === "string" && value.length >= 2) {
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+    }
+
     // Parse arrays: [a, b, c]
     if (typeof value === "string" && value.startsWith("[") && value.endsWith("]")) {
       value = value

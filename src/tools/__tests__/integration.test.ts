@@ -460,6 +460,25 @@ describe("memory_search — pagination", () => {
     expect(page.memories[1]!.id).toBe(all.memories[21]!.id);
     expect(page.memories[2]!.id).toBe(all.memories[22]!.id);
   });
+
+  it("offset=0 behaves same as no offset", () => {
+    for (let i = 0; i < 5; i++) {
+      memoryAdd(db, { content: `offset zero test ${i}`, layer: "semantic" });
+    }
+
+    const noOffset = memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3 });
+    const offset0 = memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3, offset: 0 });
+
+    expect(noOffset.memories.length).toBe(offset0.memories.length);
+    expect(noOffset.memories.map(m => m.id)).toEqual(offset0.memories.map(m => m.id));
+  });
+
+  it("offset beyond total returns empty", () => {
+    memoryAdd(db, { content: "beyond total test item", layer: "semantic" });
+
+    const result = memorySearch(db, { query: "beyond total test", mode: "exact", limit: 5, offset: 100 });
+    expect(result.memories).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

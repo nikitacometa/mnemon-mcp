@@ -140,7 +140,7 @@ function buildMemoryInput(
 }
 
 /** Process a single file with its mapping */
-function processFile(
+export function processFile(
   db: Database.Database,
   filePath: string,
   mapping: FileMapping,

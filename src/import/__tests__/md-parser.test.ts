@@ -39,6 +39,28 @@ Content`;
     const { frontmatter } = parseFrontmatter(raw);
     expect(frontmatter.layer).toBe("episodic");
   });
+
+  it("handles colons in frontmatter values", () => {
+    const raw = `---
+description: Book: The Art of War
+url: https://example.com/path
+---
+Content`;
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter["description"]).toBe("Book: The Art of War");
+    expect(frontmatter["url"]).toBe("https://example.com/path");
+  });
+
+  it("strips surrounding quotes from frontmatter values", () => {
+    const raw = `---
+title: "A title with: colons"
+note: 'single quoted value'
+---
+Content`;
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter["title"]).toBe("A title with: colons");
+    expect(frontmatter["note"]).toBe("single quoted value");
+  });
 });
 
 describe("splitByHeading", () => {
