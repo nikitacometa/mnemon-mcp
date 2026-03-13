@@ -96,6 +96,26 @@ function normalizeBm25(rank: number): number {
   return 1 / (1 + Math.abs(rank));
 }
 
+/**
+ * Ebbinghaus decay — layer-specific half-lives.
+ * Semantic and procedural memories do NOT decay (facts and rules don't "forget").
+ * Episodic decays at 30-day half-life, resource at 90 days.
+ */
+const DECAY_HALF_LIFE_DAYS: Record<Layer, number | null> = {
+  episodic: 30,
+  resource: 90,
+  semantic: null,
+  procedural: null,
+};
+
+function decayFactor(layer: Layer, referenceDate: string): number {
+  const halfLife = DECAY_HALF_LIFE_DAYS[layer];
+  if (halfLife === null) return 1.0;
+  const daysSince = (Date.now() - new Date(referenceDate).getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSince <= 0) return 1.0;
+  return Math.exp(-Math.LN2 * daysSince / halfLife);
+}
+
 /** Generate a plain-text snippet from content (first SNIPPET_TOKENS words) */
 function makeSnippet(content: string): string {
   const words = content.split(/\s+/);
@@ -120,6 +140,7 @@ interface MemoryBaseRow {
   scope: string;
   created_at: string;
   event_at: string | null;
+  last_accessed: string | null;
   superseded_by: string | null;
 }
 
@@ -151,15 +172,17 @@ export function memorySearch(
   const rows = db
     .prepare<string[], MemoryBaseRow>(
       `SELECT id, layer, title, content, entity_type, entity_name,
-              confidence, importance, scope, created_at, event_at, superseded_by
+              confidence, importance, scope, created_at, event_at,
+              last_accessed, superseded_by
        FROM memories
        WHERE id IN (${placeholders})`
     )
     .all(...idList);
 
-  // Map back scores, boost by importance for ranking
-  // Formula: final_score = bm25_score * (0.5 + 0.5 * importance)
-  // Wider range: separates high-importance (0.9→0.95) from low-importance (0.2→0.60) entries
+  // Map back scores, boost by importance and decay for ranking
+  // Formula: final_score = bm25_score * (0.3 + 0.7 * importance) * decay(layer, age)
+  // Importance range 0.3–1.0 (wider than old 0.5–1.0)
+  // Decay: episodic/resource decay over time, semantic/procedural don't decay
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
@@ -171,14 +194,15 @@ export function memorySearch(
     })
     .map((row) => {
       const bm25Score = scoreMap.get(row.id) ?? 0;
-      const importanceBoost = 0.5 + 0.5 * row.importance;
+      const importanceBoost = 0.3 + 0.7 * row.importance;
+      const decay = decayFactor(row.layer as Layer, row.last_accessed ?? row.created_at);
       return {
       id: row.id,
       layer: row.layer as Layer,
       title: row.title,
       content: row.content,
       snippet: makeSnippet(row.content),
-      score: bm25Score * importanceBoost,
+      score: bm25Score * importanceBoost * decay,
       entity_type: row.entity_type as EntityType | null,
       entity_name: row.entity_name,
       confidence: row.confidence,

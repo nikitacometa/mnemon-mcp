@@ -8,6 +8,8 @@
 import type Database from "better-sqlite3";
 import type { Layer, MemoryAddInput, MemoryAddOutput, MemoryRow } from "../types.js";
 import { generateId, insertMemory } from "./utils.js";
+import { stemWord } from "../stemmer.js";
+import { isStopWord } from "../stop-words.js";
 
 function computeExpiresAt(ttlDays: number): string {
   const d = new Date();
@@ -96,7 +98,63 @@ export function memoryAdd(
     result.superseded_ids = supersededIds;
   }
 
+  // Contradiction detection: find existing memories for the same entity with similar content
+  if (input.entity_name) {
+    const conflicts = findPotentialConflicts(db, input.entity_name, input.content, id);
+    if (conflicts.length > 0) {
+      result.potential_conflicts = conflicts;
+    }
+  }
+
   return result;
+}
+
+/**
+ * Find existing active memories for the same entity that share content tokens.
+ * Uses FTS search with OR-mode on key tokens from the new content, filtered by entity_name.
+ * Returns potential conflicts (topically similar memories) — non-blocking, advisory only.
+ */
+function findPotentialConflicts(
+  db: Database.Database,
+  entityName: string,
+  newContent: string,
+  excludeId: string
+): Array<{ id: string; snippet: string }> {
+  const tokens = newContent
+    .split(/[\s\u2013\u2014\u2015—–]+/)
+    .map(t => t.replace(/[.,;:!?"'()]/g, "").toLowerCase())
+    .filter(t => t.length >= 3 && !isStopWord(t))
+    .slice(0, 5);
+
+  if (tokens.length === 0) return [];
+
+  const ftsTokens = tokens
+    .map(t => {
+      const stemmed = stemWord(t);
+      return stemmed.length >= 3 ? `"${stemmed}"*` : `"${t}"`;
+    })
+    .join(" OR ");
+
+  try {
+    const rows = db.prepare<[string, string], { id: string; content: string }>(
+      `SELECT m.id, m.content
+       FROM memories_fts fts
+       JOIN memories m ON fts.id = m.id
+       WHERE memories_fts MATCH ?
+         AND m.entity_name = ?
+         AND m.superseded_by IS NULL
+       LIMIT 3`
+    ).all(ftsTokens, entityName);
+
+    return rows
+      .filter(r => r.id !== excludeId)
+      .map(r => ({
+        id: r.id,
+        snippet: r.content.length > 150 ? r.content.slice(0, 150) + "…" : r.content,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 /** JSON Schema for MCP tool registration */

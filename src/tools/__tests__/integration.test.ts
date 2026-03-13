@@ -714,6 +714,127 @@ describe("MCP server capabilities", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Decay scoring
+// ---------------------------------------------------------------------------
+
+describe("decay scoring", () => {
+  it("older episodic memory scores lower than newer one", () => {
+    const old = memoryAdd(db, { content: "session notes about project alpha", layer: "episodic" });
+    db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(old.id);
+    const recent = memoryAdd(db, { content: "session notes about project alpha", layer: "episodic" });
+    const result = memorySearch(db, { query: "session notes project alpha" });
+    expect(result.memories.length).toBe(2);
+    // Recent should rank higher due to decay
+    expect(result.memories[0]!.id).toBe(recent.id);
+    expect(result.memories[0]!.score).toBeGreaterThan(result.memories[1]!.score);
+  });
+
+  it("old semantic memory retains full score (no decay)", () => {
+    const fact = memoryAdd(db, { content: "blood type is A positive", layer: "semantic", importance: 0.9 });
+    db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(fact.id);
+    const result = memorySearch(db, { query: "blood type" });
+    expect(result.memories.length).toBeGreaterThan(0);
+    expect(result.memories.some(m => m.id === fact.id)).toBe(true);
+  });
+
+  it("old procedural memory retains full score (no decay)", () => {
+    const rule = memoryAdd(db, { content: "always run tests before deployment", layer: "procedural" });
+    db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(rule.id);
+    const result = memorySearch(db, { query: "tests before deployment" });
+    expect(result.memories.length).toBeGreaterThan(0);
+    expect(result.memories[0]!.id).toBe(rule.id);
+  });
+
+  it("recently accessed episodic memory decays slower", () => {
+    const m1 = memoryAdd(db, { content: "old session about database tuning", layer: "episodic" });
+    const m2 = memoryAdd(db, { content: "old session about database tuning", layer: "episodic" });
+    // Both created long ago
+    db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(m1.id);
+    db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(m2.id);
+    // But m2 was accessed recently
+    db.prepare("UPDATE memories SET last_accessed = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(m2.id);
+
+    const result = memorySearch(db, { query: "database tuning session" });
+    expect(result.memories.length).toBe(2);
+    // m2 (recently accessed) should score higher
+    expect(result.memories[0]!.id).toBe(m2.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Importance weight range
+// ---------------------------------------------------------------------------
+
+describe("importance weight range", () => {
+  it("importance 1.0 gives 3.33x boost over importance 0.0", () => {
+    const low = memoryAdd(db, { content: "importance range test item low", layer: "semantic", importance: 0.0 });
+    const high = memoryAdd(db, { content: "importance range test item high", layer: "semantic", importance: 1.0 });
+    const result = memorySearch(db, { query: "importance range test item" });
+    const highScore = result.memories.find(m => m.id === high.id)!.score;
+    const lowScore = result.memories.find(m => m.id === low.id)!.score;
+    // ratio should be 1.0/0.3 = 3.33
+    const ratio = highScore / lowScore;
+    expect(ratio).toBeGreaterThan(3);
+    expect(ratio).toBeLessThan(3.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contradiction detection
+// ---------------------------------------------------------------------------
+
+describe("contradiction detection", () => {
+  it("returns potential_conflicts when similar content exists for same entity", () => {
+    memoryAdd(db, { content: "prefers tabs for indentation", layer: "semantic", entity_name: "nikita" });
+    const result = memoryAdd(db, { content: "prefers spaces for indentation", layer: "semantic", entity_name: "nikita" });
+    expect(result.potential_conflicts).toBeDefined();
+    expect(result.potential_conflicts!.length).toBeGreaterThan(0);
+  });
+
+  it("does not return conflicts when entity_name is not provided", () => {
+    memoryAdd(db, { content: "some fact about coding style", layer: "semantic" });
+    const result = memoryAdd(db, { content: "some fact about coding style", layer: "semantic" });
+    expect(result.potential_conflicts).toBeUndefined();
+  });
+
+  it("does not return conflicts for different entities", () => {
+    memoryAdd(db, { content: "unique contradict test alpha", layer: "semantic", entity_name: "alice" });
+    const result = memoryAdd(db, { content: "unique contradict test alpha", layer: "semantic", entity_name: "bob" });
+    expect(result.potential_conflicts ?? []).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Memory analytics
+// ---------------------------------------------------------------------------
+
+describe("memory analytics", () => {
+  it("returns never_accessed count in layer stats", () => {
+    memoryAdd(db, { content: "analytics test 1", layer: "semantic" });
+    memoryAdd(db, { content: "analytics test 2", layer: "semantic" });
+    // Neither has been accessed
+    const result = memoryInspect(db, {});
+    expect(result.layer_stats!.semantic.never_accessed).toBe(2);
+  });
+
+  it("returns avg_age_days in layer stats", () => {
+    memoryAdd(db, { content: "age test item", layer: "episodic" });
+    const result = memoryInspect(db, {});
+    // Just created, avg_age should be ~0
+    expect(result.layer_stats!.episodic.avg_age_days).toBeGreaterThanOrEqual(0);
+    expect(result.layer_stats!.episodic.avg_age_days).toBeLessThan(1);
+  });
+
+  it("returns stale_count for old accessed memories", () => {
+    const m = memoryAdd(db, { content: "stale analytics test", layer: "semantic" });
+    // Simulate access 60 days ago
+    db.prepare("UPDATE memories SET last_accessed = datetime('now', '-60 days'), access_count = 1 WHERE id = ?").run(m.id);
+    const result = memoryInspect(db, {});
+    expect(result.layer_stats!.semantic.stale_count).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // EventType and event_log consistency
 // ---------------------------------------------------------------------------
 

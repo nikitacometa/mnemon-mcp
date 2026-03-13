@@ -176,6 +176,7 @@ export interface MemoryAddOutput {
   layer: Layer;
   created: boolean;
   superseded_ids?: string[];
+  potential_conflicts?: Array<{ id: string; snippet: string }>;
 }
 
 export interface MemorySearchResult {
@@ -215,6 +216,9 @@ export interface LayerStat {
   active: number;
   superseded: number;
   avg_confidence: number;
+  never_accessed: number;
+  stale_count: number;
+  avg_age_days: number;
   top_entities: Array<{ entity_name: string; count: number }>;
 }
 

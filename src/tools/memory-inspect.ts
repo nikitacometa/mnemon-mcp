@@ -31,6 +31,9 @@ interface LayerCountRow {
   active: number;
   superseded: number;
   avg_confidence: number;
+  never_accessed: number;
+  stale_count: number;
+  avg_age_days: number;
 }
 
 interface EntityCountRow {
@@ -130,7 +133,12 @@ function inspectLayerStats(
          COUNT(*) AS total,
          SUM(CASE WHEN superseded_by IS NULL THEN 1 ELSE 0 END) AS active,
          SUM(CASE WHEN superseded_by IS NOT NULL THEN 1 ELSE 0 END) AS superseded,
-         AVG(CASE WHEN superseded_by IS NULL THEN confidence ELSE NULL END) AS avg_confidence
+         AVG(CASE WHEN superseded_by IS NULL THEN confidence ELSE NULL END) AS avg_confidence,
+         SUM(CASE WHEN superseded_by IS NULL AND access_count = 0 THEN 1 ELSE 0 END) AS never_accessed,
+         SUM(CASE WHEN superseded_by IS NULL AND last_accessed IS NOT NULL
+           AND julianday('now') - julianday(last_accessed) > 30 THEN 1 ELSE 0 END) AS stale_count,
+         AVG(CASE WHEN superseded_by IS NULL
+           THEN julianday('now') - julianday(created_at) ELSE NULL END) AS avg_age_days
        FROM memories
        WHERE 1=1 ${layerFilter} ${entityFilter}
        GROUP BY layer`
@@ -146,6 +154,9 @@ function inspectLayerStats(
       active: 0,
       superseded: 0,
       avg_confidence: 0,
+      never_accessed: 0,
+      stale_count: 0,
+      avg_age_days: 0,
       top_entities: [],
     });
   }
@@ -157,6 +168,9 @@ function inspectLayerStats(
       active: row.active,
       superseded: row.superseded,
       avg_confidence: row.avg_confidence ?? 0,
+      never_accessed: row.never_accessed ?? 0,
+      stale_count: row.stale_count ?? 0,
+      avg_age_days: Math.round((row.avg_age_days ?? 0) * 10) / 10,
       top_entities: [],
     });
   }
