@@ -1,5 +1,9 @@
 # mnemon-mcp
 
+[![CI](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml)
+![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 Persistent layered memory for AI agents. SQLite + FTS5 backend, zero-cloud, zero-embedding.
 
 Built on the [Model Context Protocol](https://modelcontextprotocol.io) — works with Claude Code, Cursor, Windsurf, and any MCP-compatible client.
@@ -13,6 +17,11 @@ Most AI memory systems require cloud APIs, vector databases, or embedding models
 - **Fact versioning** — superseding chains track how knowledge evolves over time
 - **Full-text search with BM25 ranking** — FTS5 with Snowball stemming for English and Russian
 - **Two transports** — stdio for local agents, HTTP for remote/multi-server setups
+
+## Requirements
+
+- **Node.js >= 22.0.0** (uses `node:fs` globSync, stable ESM)
+- npm 9+
 
 ## Quick Start
 
@@ -42,7 +51,14 @@ npm run build
 
 **Cursor / Windsurf** — add the same server config to your MCP settings file.
 
-### 3. Use it
+### 3. Verify
+
+```bash
+# Smoke test — should return a list of 6 tools
+echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
+```
+
+### 4. Use it
 
 The server creates `~/.mnemon-mcp/memory.db` automatically on first run.
 
@@ -62,6 +78,7 @@ Agent: [calls memory_search with query="preferences new projects"]
 | `memory_add` | Store a memory with layer, entity, confidence, importance, TTL |
 | `memory_search` | FTS5 search with layer/entity/date/scope/confidence filters |
 | `memory_update` | Update in-place or create a versioned replacement (superseding chain) |
+| `memory_delete` | Permanently remove a memory, re-activating its predecessor if any |
 | `memory_inspect` | Layer statistics or single memory with full history trace |
 | `memory_export` | Export to JSON, Markdown, or claude-md (compact LLM format) |
 
@@ -159,11 +176,13 @@ For remote access or multi-server deployments:
 # Start HTTP server
 MNEMON_PORT=3000 npm run start:http
 
-# With authentication
+# With authentication (recommended for production)
 MNEMON_AUTH_TOKEN=your-secret-token MNEMON_PORT=3000 npm run start:http
 ```
 
-MCP endpoint: `POST http://localhost:3000/mcp`
+**Endpoints:**
+- `POST /mcp` — MCP JSON-RPC endpoint
+- `GET /health` — Health check (returns `{"status":"ok","version":"1.0.0"}`)
 
 Configure in your MCP client as a remote server:
 
@@ -180,9 +199,18 @@ Configure in your MCP client as a remote server:
 }
 ```
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MNEMON_DB_PATH` | `~/.mnemon-mcp/memory.db` | SQLite database file path |
+| `MNEMON_KB_PATH` | `.` (cwd) | Default knowledge base path for `npm run import:kb` |
+| `MNEMON_AUTH_TOKEN` | *(none)* | Bearer token for HTTP transport authentication |
+| `MNEMON_PORT` | `3000` | HTTP transport listening port |
+
 ## Database
 
-- **Path:** `~/.mnemon-mcp/memory.db`
+- **Path:** `~/.mnemon-mcp/memory.db` (override with `MNEMON_DB_PATH`)
 - **Engine:** SQLite with WAL mode, FTS5 full-text search
 - **Stemming:** Snowball stemmer for English and Russian morphology
 - **Tokenizer:** unicode61 (Cyrillic + Latin support)
@@ -194,16 +222,35 @@ Configure in your MCP client as a remote server:
 ```bash
 npm run dev        # Run via tsx (no build needed)
 npm run build      # Compile TypeScript → dist/
-npm test           # Run tests (vitest)
+npm test           # Run 66 tests (vitest)
+npm run bench      # Performance benchmarks (vitest bench)
 npm start          # Run compiled stdio server
 npm run start:http # Run compiled HTTP server
 ```
 
-### Smoke test
+## Troubleshooting
 
-```bash
-echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
-```
+**Server doesn't appear in Claude Code / Cursor:**
+- Verify the path in `mcp.json` is absolute and points to `dist/index.js`
+- Run `npm run build` — the `dist/` directory is not included in git
+- Check `~/.claude/mcp.json` for JSON syntax errors
+
+**Import fails with "config not found":**
+- Run `mkdir -p ~/.mnemon-mcp && cp config.example.json ~/.mnemon-mcp/config.json`
+- Edit config.json to match your KB directory structure
+
+**"Cannot find module" or "ERR_MODULE_NOT_FOUND":**
+- Ensure Node.js >= 22.0.0 (`node --version`)
+- Run `npm run build` to regenerate `dist/`
+
+**Empty search results:**
+- Verify data exists: `echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"memory_inspect","arguments":{}},"id":1}' | node dist/index.js`
+- Check if memories are superseded (use `include_superseded: true` in search)
+- For morphological mismatches, try shorter query terms
+
+**HTTP server binds to wrong port:**
+- Set `MNEMON_PORT` explicitly: `MNEMON_PORT=3000 npm run start:http`
+- Check for port conflicts: `lsof -i :3000`
 
 ## Tech Stack
 
@@ -214,7 +261,7 @@ echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
 | @modelcontextprotocol/sdk | 1.27 | Official MCP server framework |
 | Snowball stemmer | 0.2 | Morphological stemming (EN + RU) |
 | zod | 4.x | Runtime input validation |
-| vitest | 3.x | Test runner |
+| vitest | 3.x | Test runner + benchmarks |
 
 ## Philosophy
 

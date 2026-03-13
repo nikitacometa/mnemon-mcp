@@ -20,7 +20,7 @@ export type MemorySource =
   | "api"
   | `import:${"claude-md" | "kb" | "chatgpt-export" | string}`;
 
-export type SearchMode = "fts" | "exact" | "hybrid";
+export type SearchMode = "fts" | "exact";
 
 
 // ---------------------------------------------------------------------------
@@ -119,6 +119,7 @@ export interface MemorySearchInput {
   min_importance?: number;
   include_superseded?: boolean;
   limit?: number;
+  offset?: number;
   mode?: SearchMode;
 }
 
@@ -147,7 +148,16 @@ export interface MemoryExportInput {
   include_superseded?: boolean;
   date_from?: string;
   date_to?: string;
-  output_path?: string;
+  limit?: number;
+}
+
+export interface MemoryDeleteInput {
+  id: string;
+}
+
+export interface MemoryDeleteOutput {
+  deleted_id: string;
+  deleted: boolean;
 }
 
 export interface MemoryExportOutput {

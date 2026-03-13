@@ -178,10 +178,6 @@ export const memoryAddSchema = {
       type: "string",
       description: "Original file path for imports",
     },
-    session_id: {
-      type: "string",
-      description: "Session ID to associate with this memory",
-    },
     meta: {
       type: "object",
       description: "Additional metadata (layer-specific fields)",

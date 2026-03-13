@@ -15,7 +15,7 @@ const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -48,12 +48,13 @@ function runMigrations(db: Database.Database): void {
 
   if (currentVersion < 1) {
     applyMigration1(db);
+    db.pragma("user_version = 1");
   }
 
-  // Future migrations follow the same pattern:
-  // if (currentVersion < 2) { applyMigration2(db); }
-
-  db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  if (currentVersion < 2) {
+    applyMigration2(db);
+    db.pragma("user_version = 2");
+  }
 }
 
 /**
@@ -224,6 +225,52 @@ function applyMigration1(db: Database.Database): void {
         WHERE id = NEW.id;
       END;
     `);
+  })();
+}
+
+/**
+ * Migration v2:
+ * - FTS5 update trigger: only re-index when content/title/entity_name actually changed
+ *   (prevents unnecessary FTS writes on access_count/last_accessed updates)
+ * - event_log: add 'deleted' event type for memory_delete support
+ */
+function applyMigration2(db: Database.Database): void {
+  db.transaction(() => {
+    // Recreate FTS update trigger with WHEN clause to skip no-op content changes
+    db.prepare(`DROP TRIGGER IF EXISTS memories_fts_update`).run();
+    db.prepare(`
+      CREATE TRIGGER memories_fts_update
+      AFTER UPDATE ON memories
+      WHEN OLD.content != NEW.content
+        OR OLD.title IS NOT NEW.title
+        OR OLD.entity_name IS NOT NEW.entity_name
+      BEGIN
+        UPDATE memories_fts
+        SET title       = NEW.title,
+            content     = NEW.content,
+            entity_name = NEW.entity_name
+        WHERE id = NEW.id;
+      END
+    `).run();
+
+    // Recreate event_log with 'deleted' event type support
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS event_log_v2 (
+        id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        memory_id   TEXT NOT NULL,
+        event_type  TEXT NOT NULL CHECK (event_type IN ('created', 'updated', 'superseded', 'deleted')),
+        actor       TEXT NOT NULL DEFAULT 'api',
+        old_content TEXT,
+        new_content TEXT,
+        diff_meta   TEXT NOT NULL DEFAULT '{}',
+        occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `).run();
+    db.prepare(`INSERT OR IGNORE INTO event_log_v2 SELECT * FROM event_log`).run();
+    db.prepare(`DROP TABLE event_log`).run();
+    db.prepare(`ALTER TABLE event_log_v2 RENAME TO event_log`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_event_log_memory ON event_log(memory_id)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_event_log_occurred ON event_log(occurred_at DESC)`).run();
   })();
 }
 

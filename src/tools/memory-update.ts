@@ -27,6 +27,7 @@ interface MemoryLookupRow {
   confidence: number;
   importance: number;
   supersedes: string | null;
+  superseded_by: string | null;
   entity_type: string | null;
   entity_name: string | null;
   scope: string;
@@ -42,7 +43,7 @@ export function memoryUpdate(
     .prepare<[string], MemoryLookupRow>(
       `SELECT id, layer, content, title, source, source_file, session_id,
               event_at, expires_at, confidence, importance, supersedes,
-              entity_type, entity_name, scope, meta
+              superseded_by, entity_type, entity_name, scope, meta
        FROM memories WHERE id = ?`
     )
     .get(input.id);
@@ -52,6 +53,11 @@ export function memoryUpdate(
   }
 
   if (input.supersede === true) {
+    if (existing.superseded_by !== null) {
+      throw new Error(
+        `Cannot supersede memory ${input.id}: already superseded by ${existing.superseded_by}`
+      );
+    }
     return createSupersedingEntry(db, existing, input);
   }
 

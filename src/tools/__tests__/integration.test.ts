@@ -10,6 +10,8 @@ import { memoryAdd } from "../memory-add.js";
 import { memorySearch } from "../memory-search.js";
 import { memoryUpdate } from "../memory-update.js";
 import { memoryInspect } from "../memory-inspect.js";
+import { memoryDelete } from "../memory-delete.js";
+import { memoryExport } from "../memory-export.js";
 import type { MemoryAddInput, MemorySearchInput } from "../../types.js";
 
 let db: Database.Database;
@@ -278,6 +280,187 @@ describe("memory_inspect", () => {
 
   it("throws on non-existent id", () => {
     expect(() => memoryInspect(db, { id: "nonexistent" })).toThrow("Memory not found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_delete
+// ---------------------------------------------------------------------------
+
+describe("memory_delete", () => {
+  it("deletes a memory and returns confirmation", () => {
+    const added = memoryAdd(db, { content: "delete me", layer: "semantic" });
+    const result = memoryDelete(db, { id: added.id });
+
+    expect(result.deleted).toBe(true);
+    expect(result.deleted_id).toBe(added.id);
+
+    const row = db.prepare("SELECT id FROM memories WHERE id = ?").get(added.id);
+    expect(row).toBeUndefined();
+  });
+
+  it("re-activates predecessor when deleting a superseding entry", () => {
+    const v1 = memoryAdd(db, { content: "v1", layer: "semantic", source_file: "chain.md" });
+    const v2 = memoryAdd(db, { content: "v2", layer: "semantic", source_file: "chain.md" });
+
+    // v1 should be superseded by v2
+    const before = db.prepare("SELECT superseded_by FROM memories WHERE id = ?").get(v1.id) as { superseded_by: string | null };
+    expect(before.superseded_by).toBe(v2.id);
+
+    // Delete v2 → v1 becomes active again
+    memoryDelete(db, { id: v2.id });
+
+    const after = db.prepare("SELECT superseded_by FROM memories WHERE id = ?").get(v1.id) as { superseded_by: string | null };
+    expect(after.superseded_by).toBeNull();
+  });
+
+  it("removes deleted entry from FTS index", () => {
+    const added = memoryAdd(db, { content: "unique_fts_deletion_test_token", layer: "semantic" });
+    memoryDelete(db, { id: added.id });
+
+    const search = memorySearch(db, { query: "unique_fts_deletion_test_token" });
+    expect(search.memories.length).toBe(0);
+  });
+
+  it("logs deletion in event_log", () => {
+    const added = memoryAdd(db, { content: "log this deletion", layer: "semantic" });
+    memoryDelete(db, { id: added.id });
+
+    const events = db.prepare("SELECT event_type FROM event_log WHERE memory_id = ? ORDER BY occurred_at DESC").all(added.id) as Array<{ event_type: string }>;
+    expect(events.some(e => e.event_type === "deleted")).toBe(true);
+  });
+
+  it("throws on non-existent ID", () => {
+    expect(() => memoryDelete(db, { id: "nonexistent" })).toThrow("Memory not found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_export
+// ---------------------------------------------------------------------------
+
+describe("memory_export", () => {
+  function seedForExport() {
+    memoryAdd(db, { content: "Semantic fact 1", layer: "semantic", title: "Fact 1" });
+    memoryAdd(db, { content: "Semantic fact 2", layer: "semantic", title: "Fact 2" });
+    memoryAdd(db, { content: "Episodic event", layer: "episodic", title: "Event", event_at: "2026-01-15T10:00:00Z" });
+  }
+
+  it("exports as JSON", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "json" });
+    expect(result.format).toBe("json");
+    expect(result.count).toBe(3);
+    const parsed = JSON.parse(result.content) as unknown[];
+    expect(parsed).toHaveLength(3);
+  });
+
+  it("exports as markdown", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "markdown" });
+    expect(result.content).toContain("# Memory Export");
+    expect(result.content).toContain("## semantic");
+    expect(result.content).toContain("## episodic");
+  });
+
+  it("exports as claude-md", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "claude-md" });
+    expect(result.content).toContain("## Fact 1");
+    expect(result.content).toContain("<!-- semantic");
+  });
+
+  it("filters by layer", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "json", layers: ["episodic"] });
+    expect(result.count).toBe(1);
+  });
+
+  it("respects limit", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "json", limit: 2 });
+    expect(result.count).toBe(2);
+  });
+
+  it("excludes superseded by default", () => {
+    memoryAdd(db, { content: "old", layer: "semantic", source_file: "test.md" });
+    memoryAdd(db, { content: "new", layer: "semantic", source_file: "test.md" });
+    const result = memoryExport(db, { format: "json" });
+    expect(result.count).toBe(1);
+  });
+
+  it("uses COALESCE(event_at, created_at) for date filter", () => {
+    seedForExport();
+    const result = memoryExport(db, { format: "json", date_from: "2026-01-01", date_to: "2026-01-31" });
+    expect(result.count).toBe(1);
+    const parsed = JSON.parse(result.content) as Array<{ title: string }>;
+    expect(parsed[0]!.title).toBe("Event");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_search — pagination
+// ---------------------------------------------------------------------------
+
+describe("memory_search — pagination", () => {
+  it("supports offset for pagination", () => {
+    // Use distinct importance values for deterministic ordering in exact mode
+    for (let i = 1; i <= 5; i++) {
+      memoryAdd(db, { content: `pagination test item ${i}`, layer: "semantic", importance: i * 0.15 });
+    }
+
+    const all = memorySearch(db, { query: "pagination test", mode: "exact", limit: 5 });
+    const page1 = memorySearch(db, { query: "pagination test", mode: "exact", limit: 2 });
+    const page2 = memorySearch(db, { query: "pagination test", mode: "exact", limit: 2, offset: 2 });
+
+    expect(all.memories.length).toBe(5);
+    expect(page1.memories.length).toBe(2);
+    expect(page2.memories.length).toBe(2);
+
+    // Page1 = top 2 by importance, page2 = next 2
+    expect(page1.memories[0]!.id).toBe(all.memories[0]!.id);
+    expect(page1.memories[1]!.id).toBe(all.memories[1]!.id);
+    expect(page2.memories[0]!.id).toBe(all.memories[2]!.id);
+    expect(page2.memories[1]!.id).toBe(all.memories[3]!.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_update — supersede protection
+// ---------------------------------------------------------------------------
+
+describe("memory_update — supersede protection", () => {
+  it("throws when trying to supersede an already-superseded entry", () => {
+    const v1 = memoryAdd(db, { content: "v1", layer: "semantic", source_file: "prot.md" });
+    memoryAdd(db, { content: "v2", layer: "semantic", source_file: "prot.md" });
+
+    expect(() =>
+      memoryUpdate(db, { id: v1.id, supersede: true, new_content: "v3" })
+    ).toThrow("Cannot supersede");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_search — LIKE escape in exact mode
+// ---------------------------------------------------------------------------
+
+describe("memory_search — exact mode LIKE escape", () => {
+  it("does not treat % as wildcard in exact mode", () => {
+    memoryAdd(db, { content: "100% correct answer", layer: "semantic" });
+    memoryAdd(db, { content: "totally wrong answer", layer: "semantic" });
+
+    const result = memorySearch(db, { query: "100%", mode: "exact" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.content).toContain("100%");
+  });
+
+  it("does not treat _ as single-char wildcard in exact mode", () => {
+    memoryAdd(db, { content: "file_name.ts is important", layer: "semantic" });
+    memoryAdd(db, { content: "filename is different", layer: "semantic" });
+
+    const result = memorySearch(db, { query: "file_name", mode: "exact" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.content).toContain("file_name");
   });
 });
 

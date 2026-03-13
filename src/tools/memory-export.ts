@@ -15,6 +15,9 @@ type ExportRow = Pick<
   | "source" | "source_file" | "superseded_by"
 >;
 
+const DEFAULT_EXPORT_LIMIT = 1000;
+const MAX_EXPORT_LIMIT = 10000;
+
 export function memoryExport(
   db: Database.Database,
   input: MemoryExportInput
@@ -38,16 +41,18 @@ export function memoryExport(
   }
 
   if (input.date_from) {
-    conditions.push("created_at >= ?");
+    conditions.push("COALESCE(event_at, created_at) >= ?");
     params.push(input.date_from);
   }
 
   if (input.date_to) {
-    conditions.push("created_at <= ?");
+    conditions.push("COALESCE(event_at, created_at) <= ?");
     params.push(input.date_to);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limit = Math.min(input.limit ?? DEFAULT_EXPORT_LIMIT, MAX_EXPORT_LIMIT);
+  params.push(limit);
 
   const rows = db
     .prepare<unknown[], ExportRow>(
@@ -56,7 +61,8 @@ export function memoryExport(
               source, source_file, superseded_by
        FROM memories
        ${where}
-       ORDER BY layer, created_at DESC`
+       ORDER BY layer, created_at DESC
+       LIMIT ?`
     )
     .all(...params);
 
@@ -151,11 +157,15 @@ export const memoryExportSchema = {
     },
     date_from: {
       type: "string",
-      description: "Filter: created_at >= this ISO 8601 date",
+      description: "Filter: event date (event_at if set, else created_at) >= ISO 8601 date",
     },
     date_to: {
       type: "string",
-      description: "Filter: created_at <= this ISO 8601 date",
+      description: "Filter: event date (event_at if set, else created_at) <= ISO 8601 date",
+    },
+    limit: {
+      type: "number",
+      description: "Maximum entries to export (default 1000, max 10000)",
     },
   },
   required: ["format"],

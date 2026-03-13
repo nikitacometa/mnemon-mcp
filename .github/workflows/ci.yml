@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm test
+
+      - name: Smoke test
+        timeout-minutes: 1
+        run: |
+          echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' \
+            | node dist/index.js 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          tools = [t['name'] for t in d['result']['tools']]
+          assert len(tools) == 6, f'Expected 6 tools, got {len(tools)}: {tools}'
+          print(f'OK: {len(tools)} tools registered')
+          "

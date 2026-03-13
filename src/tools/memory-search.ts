@@ -8,7 +8,6 @@
  * Search modes:
  *   fts    — FTS5 tokenized search (default)
  *   exact  — LIKE substring match, fixed score 1.0
- *   hybrid — currently aliases to 'fts'; reserved for future semantic re-ranking
  */
 
 import type Database from "better-sqlite3";
@@ -130,15 +129,15 @@ export function memorySearch(
 ): MemorySearchOutput {
   const startMs = Date.now();
   const limit = input.limit ?? DEFAULT_LIMIT;
+  const offset = input.offset ?? 0;
   const mode = input.mode ?? "fts";
 
   let ids: Array<{ id: string; score: number }>;
 
   if (mode === "exact") {
-    ids = exactSearch(db, input, limit);
+    ids = exactSearch(db, input, limit + offset);
   } else {
-    // 'fts' and 'hybrid' both use FTS5; 'hybrid' is reserved for future semantic re-ranking
-    ids = ftsSearch(db, input, limit);
+    ids = ftsSearch(db, input, limit + offset);
   }
 
   if (ids.length === 0) {
@@ -190,7 +189,7 @@ export function memorySearch(
     };
     })
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .slice(offset, offset + limit);
 
   // Update access tracking for returned results
   if (memories.length > 0) {
@@ -307,8 +306,9 @@ function exactSearch(
   input: MemorySearchInput,
   limit: number
 ): Array<{ id: string; score: number }> {
-  const conditions: string[] = ["content LIKE ?"];
-  const params: unknown[] = [`%${input.query}%`];
+  const escaped = input.query.replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const conditions: string[] = ["content LIKE ? ESCAPE '\\'"];
+  const params: unknown[] = [`%${escaped}%`];
 
   if (!input.include_superseded) {
     conditions.push("superseded_by IS NULL");
@@ -409,10 +409,14 @@ export const memorySearchSchema = {
       type: "number",
       description: "Maximum results to return (default 10)",
     },
+    offset: {
+      type: "number",
+      description: "Number of results to skip (for pagination, default 0)",
+    },
     mode: {
       type: "string",
-      enum: ["fts", "exact", "hybrid"],
-      description: "Search mode: fts=FTS5 tokenized (default), exact=LIKE substring, hybrid=alias for fts (semantic re-ranking reserved for future)",
+      enum: ["fts", "exact"],
+      description: "Search mode: fts=FTS5 tokenized (default), exact=LIKE substring",
     },
   },
   required: ["query"],
