@@ -7,12 +7,9 @@
  */
 
 import type Database from "better-sqlite3";
-import { randomBytes } from "node:crypto";
-import type { Layer, MemoryRow, MemoryUpdateInput, MemoryUpdateOutput } from "../types.js";
-
-function generateId(): string {
-  return randomBytes(16).toString("hex");
-}
+import type { MemoryUpdateInput, MemoryUpdateOutput } from "../types.js";
+import { stemText } from "../stemmer.js";
+import { generateId, insertMemory } from "./utils.js";
 
 interface MemoryLookupRow {
   id: string;
@@ -75,11 +72,15 @@ function updateInPlace(
   if (input.content !== undefined) {
     setClauses.push("content = ?");
     params.push(input.content);
+    setClauses.push("stemmed_content = ?");
+    params.push(stemText(input.content));
   }
 
   if (input.title !== undefined) {
     setClauses.push("title = ?");
     params.push(input.title);
+    setClauses.push("stemmed_title = ?");
+    params.push(stemText(input.title));
   }
 
   if (input.confidence !== undefined) {
@@ -154,56 +155,48 @@ function createSupersedingEntry(
     metaJson = JSON.stringify({ ...existingMeta, ...input.meta });
   }
 
-  const insertStmt = db.prepare(`
-    INSERT INTO memories (
-      id, layer, content, title, source, source_file,
-      session_id, event_at, expires_at,
-      confidence, importance,
-      supersedes,
-      entity_type, entity_name, scope, meta
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?,
-      ?, ?,
-      ?,
-      ?, ?, ?, ?
-    )
-  `);
+  const newTitle = input.title ?? existing.title;
 
-  const setSupersededBy = db.prepare(
-    `UPDATE memories SET superseded_by = ? WHERE id = ?`
-  );
-
-  const logEvent = db.prepare(`
-    INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+  // Don't inherit expired expires_at — superseding entry should not start expired
+  const expiresAt =
+    existing.expires_at && new Date(existing.expires_at) > new Date()
+      ? existing.expires_at
+      : null;
 
   const run = db.transaction(() => {
-    insertStmt.run(
-      newId,
-      existing.layer,
-      newContent,
-      input.title ?? existing.title,
-      existing.source,
-      existing.source_file,
-      existing.session_id,
-      existing.event_at,
-      existing.expires_at,
-      input.confidence ?? existing.confidence,
-      input.importance ?? existing.importance,
-      existing.id, // new entry supersedes the old one
-      existing.entity_type,
-      existing.entity_name,
-      existing.scope,
-      metaJson
-    );
+    insertMemory(db, {
+      id: newId,
+      layer: existing.layer,
+      content: newContent,
+      title: newTitle,
+      source: existing.source,
+      source_file: existing.source_file,
+      session_id: existing.session_id,
+      event_at: existing.event_at,
+      expires_at: expiresAt,
+      confidence: input.confidence ?? existing.confidence,
+      importance: input.importance ?? existing.importance,
+      supersedes: existing.id,
+      entity_type: existing.entity_type,
+      entity_name: existing.entity_name,
+      scope: existing.scope,
+      meta: metaJson,
+    });
 
     // Mark the old entry as superseded
-    setSupersededBy.run(newId, existing.id);
+    db.prepare(
+      `UPDATE memories SET superseded_by = ? WHERE id = ?`
+    ).run(newId, existing.id);
 
-    logEvent.run(existing.id, "superseded", existing.source, existing.content, null);
-    logEvent.run(newId, "created", existing.source, null, newContent);
+    db.prepare(`
+      INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(existing.id, "superseded", existing.source, existing.content, null);
+
+    db.prepare(`
+      INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(newId, "created", existing.source, null, newContent);
   });
 
   run();

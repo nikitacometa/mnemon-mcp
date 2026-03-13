@@ -10,12 +10,13 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stemText } from "./stemmer.js";
 
 const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -54,6 +55,12 @@ function runMigrations(db: Database.Database): void {
   if (currentVersion < 2) {
     applyMigration2(db);
     db.pragma("user_version = 2");
+  }
+
+  if (currentVersion < 3) {
+    applyMigration3(db);
+    backfillStemmedContent(db);
+    db.pragma("user_version = 3");
   }
 }
 
@@ -272,6 +279,86 @@ function applyMigration2(db: Database.Database): void {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_event_log_memory ON event_log(memory_id)`).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_event_log_occurred ON event_log(occurred_at DESC)`).run();
   })();
+}
+
+/**
+ * Migration v3: Index-time stemming.
+ * - Add stemmed_content and stemmed_title columns to memories table
+ * - Recreate all FTS5 triggers to use stemmed columns (with COALESCE fallback)
+ * - Backfill runs separately after this migration (requires JS stemmer)
+ */
+function applyMigration3(db: Database.Database): void {
+  db.transaction(() => {
+    // Add stemmed columns
+    db.prepare(`ALTER TABLE memories ADD COLUMN stemmed_content TEXT`).run();
+    db.prepare(`ALTER TABLE memories ADD COLUMN stemmed_title TEXT`).run();
+
+    // Recreate FTS5 insert trigger — use stemmed columns with fallback
+    db.prepare(`DROP TRIGGER IF EXISTS memories_fts_insert`).run();
+    db.prepare(`
+      CREATE TRIGGER memories_fts_insert
+      AFTER INSERT ON memories
+      BEGIN
+        INSERT INTO memories_fts(id, title, content, entity_name)
+        VALUES (
+          NEW.id,
+          COALESCE(NEW.stemmed_title, NEW.title),
+          COALESCE(NEW.stemmed_content, NEW.content),
+          NEW.entity_name
+        );
+      END
+    `).run();
+
+    // Recreate FTS5 update trigger — use stemmed columns, keep WHEN clause
+    db.prepare(`DROP TRIGGER IF EXISTS memories_fts_update`).run();
+    db.prepare(`
+      CREATE TRIGGER memories_fts_update
+      AFTER UPDATE ON memories
+      WHEN OLD.content != NEW.content
+        OR OLD.title IS NOT NEW.title
+        OR OLD.entity_name IS NOT NEW.entity_name
+        OR OLD.stemmed_content IS NOT NEW.stemmed_content
+        OR OLD.stemmed_title IS NOT NEW.stemmed_title
+      BEGIN
+        UPDATE memories_fts
+        SET title       = COALESCE(NEW.stemmed_title, NEW.title),
+            content     = COALESCE(NEW.stemmed_content, NEW.content),
+            entity_name = NEW.entity_name
+        WHERE id = NEW.id;
+      END
+    `).run();
+
+    // Delete trigger unchanged — no stemming needed for DELETE
+  })();
+}
+
+/**
+ * Backfill stemmed_content and stemmed_title for all memories where they are NULL.
+ * Runs once after migration v3, or on startup if entries were inserted before v3.
+ * Uses Snowball stemmer via stemText() for both Russian and English content.
+ */
+function backfillStemmedContent(db: Database.Database): void {
+  const rows = db.prepare<[], { id: string; content: string; title: string | null }>(
+    `SELECT id, content, title FROM memories WHERE stemmed_content IS NULL`
+  ).all();
+
+  if (rows.length === 0) return;
+
+  const update = db.prepare(
+    `UPDATE memories SET stemmed_content = ?, stemmed_title = ? WHERE id = ?`
+  );
+
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      update.run(
+        stemText(row.content),
+        row.title ? stemText(row.title) : null,
+        row.id
+      );
+    }
+  });
+
+  tx();
 }
 
 export { DB_PATH };

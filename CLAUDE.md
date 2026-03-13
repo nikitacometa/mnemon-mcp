@@ -17,7 +17,7 @@ Task board shared with KB: `~/dev/mnemon/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
 npm run build      # compile TypeScript → dist/
 npm run dev        # run via tsx (no build needed)
 npm start          # run compiled dist/index.js (blocks on stdio — see Smoke Test)
-npm test           # vitest (14 unit tests, md-parser)
+npm test           # vitest (74 tests: 14 md-parser + 60 integration)
 npm run import:kb  # import mnemon-kb markdown → SQLite (skip unchanged)
 ```
 
@@ -73,6 +73,7 @@ src/
 - **FTS5:** `memories_fts` synced via INSERT/UPDATE/DELETE triggers
 - **Partial indexes:** exclude superseded entries from search
 - **Tokenizer:** unicode61 (Cyrillic + Latin, NOT Thai-friendly)
+- **Index-time stemming:** Snowball stemmer (EN + RU), stored in `stemmed_content`/`stemmed_title` columns, FTS5 indexes stemmed forms
 
 ## 4-Layer Memory Model
 
@@ -93,6 +94,23 @@ src/
 | memory_inspect | Working | Stats per layer or single memory history |
 | memory_export | Working | Export to json/markdown/claude-md with filters |
 | style_extract | Stub | Throws "not implemented" |
+
+### MCP Resources
+
+| URI | Description |
+|-----|-------------|
+| `memory://stats` | Aggregate statistics per layer |
+| `memory://recent` | Memories created/updated in last 24h |
+| `memory://layer/{layer}` | Active memories in a specific layer |
+| `memory://entity/{name}` | Active memories about a specific entity |
+
+### MCP Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `recall` | Recall everything known about a topic |
+| `context-load` | Load relevant context for a task |
+| `journal` | Create structured journal entry |
 
 ## MCP Config
 
@@ -123,10 +141,10 @@ In `~/.claude/mcp.json`:
 
 ## Known Issues
 
-1. **Russian morphology breaks FTS5** — unicode61 tokenizer has no stemming; inflected forms don't match (e.g., «субличностях» ≠ «субличности»). Fix: Snowball stemmer pre-processing (see M2 plan)
+1. **Russian morphology partially addressed** — Snowball stemmer applied at index and query time. Inflected forms now match via stemmed FTS5 index. Edge cases with irregular forms may still miss.
 2. **Import scope too narrow** — 21/50 golden set cases blocked (nutrition, habits, journal, finance, language, telegram not imported)
 3. **L2 retrieval = 36.9/100** — Recall@5=0.298, below 0.3 threshold. Achievable with current scope: 46.3/100
-4. **No integration tests** — only md-parser unit tests. Need tests for memory-add, memory-search, memory-update
+4. **Integration tests added** — 60 integration tests covering all 6 tools + stemming + pagination + edge cases
 5. **hybrid mode = alias for fts** — no real semantic/vector search, just falls through to FTS5
 6. **No cycle protection** in superseding chains
 

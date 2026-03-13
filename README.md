@@ -1,42 +1,32 @@
 # mnemon-mcp
 
 [![CI](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml)
-![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)
+![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Persistent layered memory for AI agents. SQLite + FTS5 backend, zero-cloud, zero-embedding.
+Persistent layered memory for AI agents — local-first, zero-cloud, single-file SQLite.
 
-Built on the [Model Context Protocol](https://modelcontextprotocol.io) — works with Claude Code, Cursor, Windsurf, and any MCP-compatible client.
+Works with any [MCP](https://modelcontextprotocol.io)-compatible client: Claude Code, Cursor, Windsurf, and others.
 
-## Why mnemon-mcp?
+## Features
 
-Most AI memory systems require cloud APIs, vector databases, or embedding models. mnemon-mcp takes a different approach:
-
-- **Zero dependencies on external services** — everything runs locally in SQLite
-- **4-layer cognitive model** — episodic, semantic, procedural, resource — instead of a flat key-value store
-- **Fact versioning** — superseding chains track how knowledge evolves over time
-- **Full-text search with BM25 ranking** — FTS5 with Snowball stemming for English and Russian
-- **Two transports** — stdio for local agents, HTTP for remote/multi-server setups
-
-## Requirements
-
-- **Node.js >= 22.0.0** (uses `node:fs` globSync, stable ESM)
-- npm 9+
+- **4-layer memory model** — episodic, semantic, procedural, resource — each with distinct access patterns and lifetimes
+- **Full-text search** — FTS5 with BM25 ranking, field boosting, AND→OR fallback
+- **Index-time stemming** — Snowball stemmer for English and Russian, applied at both index and query time for precise morphological matching
+- **Fact versioning** — superseding chains track how knowledge evolves; search returns only the latest version
+- **Knowledge base import** — bulk-import Markdown files with configurable layer routing, splitting, and deduplication
+- **MCP Resources & Prompts** — browse memory stats, layers, entities via Resources; pre-built prompt templates for recall, context loading, journaling
+- **Two transports** — stdio for local agents, HTTP with Bearer auth for remote setups
+- **Zero external dependencies** — no vector DB, no embedding model, no cloud API. One SQLite file
 
 ## Quick Start
 
-### 1. Install
-
 ```bash
 git clone https://github.com/nikitacometa/mnemon-mcp.git
-cd mnemon-mcp
-npm install
-npm run build
+cd mnemon-mcp && npm install && npm run build
 ```
 
-### 2. Configure your MCP client
-
-**Claude Code** (`~/.claude/mcp.json`):
+Add to your MCP client config (e.g. `~/.claude/mcp.json`):
 
 ```json
 {
@@ -49,73 +39,62 @@ npm run build
 }
 ```
 
-**Cursor / Windsurf** — add the same server config to your MCP settings file.
+The database (`~/.mnemon-mcp/memory.db`) is created automatically on first run.
 
-### 3. Verify
-
-```bash
-# Smoke test — should return a list of 6 tools
-echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
-```
-
-### 4. Use it
-
-The server creates `~/.mnemon-mcp/memory.db` automatically on first run.
-
-```
-You: Remember that I prefer TypeScript over JavaScript for new projects
-Agent: [calls memory_add with layer="semantic", content="User prefers TypeScript..."]
-
-You: What do I prefer for new projects?
-Agent: [calls memory_search with query="preferences new projects"]
-→ Returns: "User prefers TypeScript over JavaScript for new projects"
-```
+Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js`
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
-| `memory_add` | Store a memory with layer, entity, confidence, importance, TTL |
-| `memory_search` | FTS5 search with layer/entity/date/scope/confidence filters |
+| `memory_add` | Store a memory with layer, entity, confidence, importance, and optional TTL |
+| `memory_search` | FTS5 or exact search with layer/entity/date/scope/confidence filters and pagination |
 | `memory_update` | Update in-place or create a versioned replacement (superseding chain) |
-| `memory_delete` | Permanently remove a memory, re-activating its predecessor if any |
-| `memory_inspect` | Layer statistics or single memory with full history trace |
-| `memory_export` | Export to JSON, Markdown, or claude-md (compact LLM format) |
+| `memory_delete` | Permanently delete a memory, re-activating its predecessor if any |
+| `memory_inspect` | Layer statistics or single-memory history trace |
+| `memory_export` | Export to JSON, Markdown, or claude-md with filters |
 
-## 4-Layer Memory Model
+## Memory Model
 
-| Layer | What it stores | Access pattern | Example |
-|-------|---------------|----------------|---------|
-| **episodic** | Events, sessions, conversations | By date/period | "Debugged auth issue on March 5" |
-| **semantic** | Facts, preferences, relationships | By topic/entity | "User prefers dark theme" |
-| **procedural** | Rules, workflows, conventions | Loaded at startup | "Always run tests before commit" |
-| **resource** | Reference material, summaries | On demand | "Book notes: Designing Data-Intensive Apps" |
+| Layer | Purpose | Access Pattern | Example |
+|-------|---------|----------------|---------|
+| **episodic** | Events, sessions | By date/period | "Debugged auth issue on March 5" |
+| **semantic** | Facts, preferences | By topic/entity | "User prefers dark theme" |
+| **procedural** | Rules, workflows | Loaded at startup | "Always run tests before commit" |
+| **resource** | Reference material | On demand | "Book notes: Designing Data-Intensive Apps" |
 
-## Superseding Chains
+Different kinds of knowledge have different lifetimes and retrieval patterns. A journal entry from last Tuesday and a coding convention that never changes shouldn't live in the same flat store.
 
-When facts change, mnemon-mcp doesn't delete the old version — it creates a **superseding chain**:
+## Search
+
+Two modes, both with layer/entity/scope/date/confidence filters:
+
+**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements automatically. Scores are boosted by importance weight: `bm25 × (0.5 + 0.5 × importance)`.
+
+**Exact mode** — `LIKE` substring match for precise lookups. Useful when you need an exact phrase rather than tokenized matching.
+
+## Fact Versioning
+
+When a fact changes, mnemon-mcp doesn't delete the old version — it creates a superseding chain:
 
 ```
 v1: "Team uses React 17"  →  superseded_by: v2
 v2: "Team uses React 19"  →  supersedes: v1 (active)
 ```
 
-Search automatically returns only the latest version. Use `memory_inspect` with `include_history: true` to see the full chain.
+Search returns only the latest. `memory_inspect` with `include_history: true` shows the full chain. `memory_delete` re-activates the predecessor.
 
 ## Importing a Knowledge Base
 
-mnemon-mcp can bulk-import a directory of Markdown files into the memory database.
-
-### 1. Create a config file
-
-Copy the example and customize for your KB structure:
+Bulk-import a directory of Markdown files with configurable routing:
 
 ```bash
-mkdir -p ~/.mnemon-mcp
-cp config.example.json ~/.mnemon-mcp/config.json
+cp config.example.json ~/.mnemon-mcp/config.json   # customize first
+npm run import:kb -- --kb-path /path/to/your/kb     # incremental (skips unchanged)
+npx tsx src/import/cli.ts --kb-path /path --force   # full re-import
 ```
 
-Edit `~/.mnemon-mcp/config.json` to map your directories to memory layers:
+Config maps glob patterns to memory layers:
 
 ```json
 {
@@ -128,147 +107,67 @@ Edit `~/.mnemon-mcp/config.json` to map your directories to memory layers:
       "entity_type": "user",
       "entity_name": "$owner",
       "importance": 0.6,
-      "confidence": 0.9,
-      "split": "h2"
-    },
-    {
-      "glob": "notes/**/*.md",
-      "layer": "semantic",
-      "entity_type": "concept",
-      "entity_name": "from-heading",
-      "importance": 0.5,
-      "confidence": 0.8,
       "split": "h2"
     }
   ]
 }
 ```
 
-### 2. Run the import
-
-```bash
-# Incremental import (skips unchanged files)
-npm run import:kb -- --kb-path /path/to/your/kb
-
-# Full re-import (overwrites all)
-npx tsx src/import/cli.ts --kb-path /path/to/your/kb --force
-```
-
-### Config reference
-
-| Field | Values | Description |
-|-------|--------|-------------|
-| `glob` | `"journal/**/*.md"` | File pattern relative to KB root |
-| `layer` | `episodic`, `semantic`, `procedural`, `resource` | Target memory layer |
-| `entity_type` | `user`, `project`, `person`, `concept`, `file`, `rule`, `tool` | Entity classification |
-| `entity_name` | string, `"from-heading"`, `"$owner"` | Entity name (or derive from H1, or use owner_name) |
-| `split` | `whole`, `h2`, `h3` | How to split files into memory records |
-| `importance` | `0.0–1.0` | Retrieval priority weight |
-| `confidence` | `0.0–1.0` | How certain this memory is |
-| `file_pattern` | regex string | Optional filename filter |
-| `scope` | string | Project/context scope (default: `"global"`) |
+Each mapping specifies: `glob`, `layer`, `entity_type`, `entity_name` (string | `"from-heading"` | `"$owner"`), `split` (`whole` | `h2` | `h3`), `importance`, `confidence`, and optional `scope` and `file_pattern`.
 
 ## HTTP Transport
 
-For remote access or multi-server deployments:
-
 ```bash
-# Start HTTP server
-MNEMON_PORT=3000 npm run start:http
-
-# With authentication (recommended for production)
-MNEMON_AUTH_TOKEN=your-secret-token MNEMON_PORT=3000 npm run start:http
+MNEMON_AUTH_TOKEN=secret MNEMON_PORT=3000 npm run start:http
 ```
 
-**Endpoints:**
-- `POST /mcp` — MCP JSON-RPC endpoint
-- `GET /health` — Health check (returns `{"status":"ok","version":"1.0.0"}`)
+- `POST /mcp` — MCP JSON-RPC endpoint (Bearer auth if token is set)
+- `GET /health` — returns `{"status":"ok","version":"..."}`
 
-Configure in your MCP client as a remote server:
+Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM.
 
-```json
-{
-  "mcpServers": {
-    "mnemon-mcp": {
-      "url": "http://your-server:3000/mcp",
-      "headers": {
-        "Authorization": "Bearer your-secret-token"
-      }
-    }
-  }
-}
-```
-
-## Environment Variables
+## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MNEMON_DB_PATH` | `~/.mnemon-mcp/memory.db` | SQLite database file path |
-| `MNEMON_KB_PATH` | `.` (cwd) | Default knowledge base path for `npm run import:kb` |
-| `MNEMON_AUTH_TOKEN` | *(none)* | Bearer token for HTTP transport authentication |
-| `MNEMON_PORT` | `3000` | HTTP transport listening port |
-
-## Database
-
-- **Path:** `~/.mnemon-mcp/memory.db` (override with `MNEMON_DB_PATH`)
-- **Engine:** SQLite with WAL mode, FTS5 full-text search
-- **Stemming:** Snowball stemmer for English and Russian morphology
-- **Tokenizer:** unicode61 (Cyrillic + Latin support)
-- **Migrations:** Automatic via `PRAGMA user_version`
-- **Backup:** `npm run db:backup` creates `~/.mnemon-mcp/memory.db.bak`
+| `MNEMON_DB_PATH` | `~/.mnemon-mcp/memory.db` | SQLite database path |
+| `MNEMON_KB_PATH` | `.` | Knowledge base path for import |
+| `MNEMON_AUTH_TOKEN` | — | Bearer token for HTTP transport |
+| `MNEMON_PORT` | `3000` | HTTP transport port |
 
 ## Development
 
 ```bash
-npm run dev        # Run via tsx (no build needed)
-npm run build      # Compile TypeScript → dist/
-npm test           # Run 66 tests (vitest)
-npm run bench      # Performance benchmarks (vitest bench)
-npm start          # Run compiled stdio server
-npm run start:http # Run compiled HTTP server
+npm run dev        # run via tsx (no build step)
+npm run build      # TypeScript → dist/
+npm test           # 74 tests (vitest)
+npm run bench      # performance benchmarks
+npm run db:backup  # backup database
 ```
 
-## Troubleshooting
+**Stack:** TypeScript 5.9 (strict), better-sqlite3 12.x, @modelcontextprotocol/sdk 1.27, Snowball stemmer, zod 4.x, vitest 3.x.
 
-**Server doesn't appear in Claude Code / Cursor:**
-- Verify the path in `mcp.json` is absolute and points to `dist/index.js`
-- Run `npm run build` — the `dist/` directory is not included in git
-- Check `~/.claude/mcp.json` for JSON syntax errors
+**Architecture:** `src/server.ts` (shared MCP factory) → `src/index.ts` (stdio) / `src/index-http.ts` (HTTP). Tools in `src/tools/`, import pipeline in `src/import/`. Database with WAL mode, FTS5 triggers with index-time Snowball stemming, versioned migrations via `PRAGMA user_version`.
 
-**Import fails with "config not found":**
-- Run `mkdir -p ~/.mnemon-mcp && cp config.example.json ~/.mnemon-mcp/config.json`
-- Edit config.json to match your KB directory structure
+## How It Compares
 
-**"Cannot find module" or "ERR_MODULE_NOT_FOUND":**
-- Ensure Node.js >= 22.0.0 (`node --version`)
-- Run `npm run build` to regenerate `dist/`
+| | mnemon-mcp | mem0 | basic-memory | Anthropic KG |
+|---|---|---|---|---|
+| **Architecture** | SQLite FTS5 | Cloud API + Qdrant | Markdown + vector | JSON file |
+| **Dependencies** | None | Qdrant, Neo4j, Ollama | FastEmbed, Python 3.12 | None |
+| **Memory structure** | 4 layers | Flat | Flat | Graph |
+| **Fact versioning** | Superseding chains | Partial | No | No |
+| **Multilingual** | EN + RU stemming | EN only | EN only | None |
+| **License** | MIT | Apache 2.0 | AGPL | MIT |
+| **Cost** | Free | $19–249/mo | Free + SaaS | Free |
+| **Setup** | `npm install` | Docker + cloud keys | pip + dependencies | Built-in |
 
-**Empty search results:**
-- Verify data exists: `echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"memory_inspect","arguments":{}},"id":1}' | node dist/index.js`
-- Check if memories are superseded (use `include_superseded: true` in search)
-- For morphological mismatches, try shorter query terms
+## Design Principles
 
-**HTTP server binds to wrong port:**
-- Set `MNEMON_PORT` explicitly: `MNEMON_PORT=3000 npm run start:http`
-- Check for port conflicts: `lsof -i :3000`
-
-## Tech Stack
-
-| Component | Version | Why |
-|-----------|---------|-----|
-| TypeScript | 5.9 | Strict mode, NodeNext modules |
-| better-sqlite3 | 12.x | Synchronous SQLite — ideal for MCP stdio |
-| @modelcontextprotocol/sdk | 1.27 | Official MCP server framework |
-| Snowball stemmer | 0.2 | Morphological stemming (EN + RU) |
-| zod | 4.x | Runtime input validation |
-| vitest | 3.x | Test runner + benchmarks |
-
-## Philosophy
-
-- **Air-gapped by design** — no network calls, no telemetry, no cloud. Your memories stay on your machine.
-- **SQLite over Postgres** — single-file database, zero ops, instant setup.
-- **FTS5 over embeddings** — deterministic, interpretable search. No GPU, no API keys, no vector DB.
-- **Layered over flat** — different types of knowledge have different access patterns and lifetimes.
+- **Air-gapped** — no network calls, no telemetry. Your memories stay on your machine.
+- **Single file** — one SQLite database, zero ops, instant setup.
+- **Deterministic search** — FTS5 over embeddings: interpretable, reproducible, no GPU required.
+- **Structured over flat** — layers encode access patterns; superseding chains encode time.
 
 ## License
 

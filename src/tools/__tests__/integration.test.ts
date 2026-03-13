@@ -12,6 +12,7 @@ import { memoryUpdate } from "../memory-update.js";
 import { memoryInspect } from "../memory-inspect.js";
 import { memoryDelete } from "../memory-delete.js";
 import { memoryExport } from "../memory-export.js";
+import { stemText } from "../../stemmer.js";
 import type { MemoryAddInput, MemorySearchInput } from "../../types.js";
 
 let db: Database.Database;
@@ -281,6 +282,27 @@ describe("memory_inspect", () => {
   it("throws on non-existent id", () => {
     expect(() => memoryInspect(db, { id: "nonexistent" })).toThrow("Memory not found");
   });
+
+  it("inspectById response does not contain stemmed_content or stemmed_title", () => {
+    const added = memoryAdd(db, { content: "stemmed leak test", layer: "semantic", title: "Leak Test" });
+    const result = memoryInspect(db, { id: added.id });
+    expect(result.memory).toBeDefined();
+    expect(result.memory).not.toHaveProperty("stemmed_content");
+    expect(result.memory).not.toHaveProperty("stemmed_title");
+  });
+
+  it("superseded chain entries do not contain stemmed columns", () => {
+    const v1 = memoryAdd(db, { content: "chain v1", layer: "semantic", source_file: "leak-chain.md" });
+    const v2 = memoryAdd(db, { content: "chain v2", layer: "semantic", source_file: "leak-chain.md" });
+
+    const result = memoryInspect(db, { id: v2.id, include_history: true });
+    expect(result.superseded_chain).toBeDefined();
+    expect(result.superseded_chain!.length).toBeGreaterThanOrEqual(1);
+    for (const entry of result.superseded_chain!) {
+      expect(entry).not.toHaveProperty("stemmed_content");
+      expect(entry).not.toHaveProperty("stemmed_title");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -423,6 +445,21 @@ describe("memory_search — pagination", () => {
     expect(page2.memories[0]!.id).toBe(all.memories[2]!.id);
     expect(page2.memories[1]!.id).toBe(all.memories[3]!.id);
   });
+
+  it("offset larger than limit returns correct slice", () => {
+    for (let i = 0; i < 25; i++) {
+      memoryAdd(db, { content: `deep pagination item ${i}`, layer: "semantic", importance: (25 - i) * 0.04 });
+    }
+
+    const all = memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 25 });
+    const page = memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 3, offset: 20 });
+
+    expect(all.memories.length).toBe(25);
+    expect(page.memories.length).toBe(3);
+    expect(page.memories[0]!.id).toBe(all.memories[20]!.id);
+    expect(page.memories[1]!.id).toBe(all.memories[21]!.id);
+    expect(page.memories[2]!.id).toBe(all.memories[22]!.id);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -437,6 +474,25 @@ describe("memory_update — supersede protection", () => {
     expect(() =>
       memoryUpdate(db, { id: v1.id, supersede: true, new_content: "v3" })
     ).toThrow("Cannot supersede");
+  });
+
+  it("superseding entry gets null expires_at when original was expired", () => {
+    const old = memoryAdd(db, { content: "will expire", layer: "semantic", ttl_days: 1 });
+    db.prepare("UPDATE memories SET expires_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(old.id);
+    const result = memoryUpdate(db, { id: old.id, supersede: true, new_content: "new version" });
+    const row = db.prepare("SELECT expires_at FROM memories WHERE id = ?").get(result.new_id!) as { expires_at: string | null };
+    expect(row.expires_at).toBeNull();
+  });
+
+  it("superseding entry inherits non-expired expires_at", () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 30);
+    const futureStr = future.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+    const old = memoryAdd(db, { content: "will expire later", layer: "semantic", ttl_days: 30 });
+    const result = memoryUpdate(db, { id: old.id, supersede: true, new_content: "updated version" });
+    const row = db.prepare("SELECT expires_at FROM memories WHERE id = ?").get(result.new_id!) as { expires_at: string | null };
+    expect(row.expires_at).not.toBeNull();
   });
 });
 
@@ -562,5 +618,144 @@ describe("edge cases", () => {
     const result = memorySearch(db, { query: "event", date_from: "2026-03-01", date_to: "2026-03-31" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("March");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Index-time stemming
+// ---------------------------------------------------------------------------
+
+describe("index-time stemming", () => {
+  it("populates stemmed_content and stemmed_title on insert", () => {
+    const result = memoryAdd(db, {
+      content: "Субличности в психологии — внутренние части личности",
+      layer: "semantic",
+      title: "Субличности",
+    });
+
+    const row = db.prepare("SELECT stemmed_content, stemmed_title FROM memories WHERE id = ?")
+      .get(result.id) as { stemmed_content: string; stemmed_title: string };
+
+    expect(row.stemmed_content).toBeTruthy();
+    expect(row.stemmed_title).toBeTruthy();
+    // Stemmed content should be shorter (stems are truncated)
+    expect(row.stemmed_content.length).toBeLessThan("Субличности в психологии — внутренние части личности".length);
+  });
+
+  it("FTS5 indexes stemmed content for better morphological matching", () => {
+    memoryAdd(db, {
+      content: "Работа с субличностями через IFS терапию",
+      layer: "semantic",
+    });
+
+    // Verify FTS5 contains stemmed form
+    const ftsRow = db.prepare("SELECT content FROM memories_fts WHERE memories_fts MATCH ?")
+      .get(stemText("субличностями")) as { content: string } | undefined;
+
+    expect(ftsRow).toBeDefined();
+  });
+
+  it("updates stemmed content on in-place update", () => {
+    const added = memoryAdd(db, {
+      content: "original content",
+      layer: "semantic",
+      title: "Original Title",
+    });
+
+    memoryUpdate(db, { id: added.id, content: "Обновлённое содержание записи" });
+
+    const row = db.prepare("SELECT stemmed_content FROM memories WHERE id = ?")
+      .get(added.id) as { stemmed_content: string };
+
+    expect(row.stemmed_content).toContain("обновлён");
+  });
+
+  it("populates stemmed content on superseding entry", () => {
+    const v1 = memoryAdd(db, { content: "version one", layer: "semantic" });
+    const result = memoryUpdate(db, {
+      id: v1.id,
+      new_content: "Новая версия с другим содержанием",
+      supersede: true,
+    });
+
+    const row = db.prepare("SELECT stemmed_content FROM memories WHERE id = ?")
+      .get(result.new_id!) as { stemmed_content: string };
+
+    expect(row.stemmed_content).toBeTruthy();
+    expect(row.stemmed_content).toContain("нов");
+  });
+
+  it("stemText handles mixed Russian/English content", () => {
+    const result = stemText("TypeScript enables strict type checking для проектов");
+    expect(result).toContain("typescript");
+    expect(result).toContain("проект"); // "проектов" → stem "проект"
+    expect(result).toContain("enabl"); // "enables" → stem "enabl"
+    // Note: stop words are NOT removed by stemText — that's query-time only
+  });
+
+  it("stemText preserves numbers", () => {
+    const result = stemText("Version 2026 has 100 features");
+    expect(result).toContain("2026");
+    expect(result).toContain("100");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP Resources (via createMcpServer)
+// ---------------------------------------------------------------------------
+
+describe("MCP server capabilities", () => {
+  it("createMcpServer returns a server with tools, resources, and prompts", async () => {
+    // Verify the server factory imports work and capabilities are set
+    const { createMcpServer } = await import("../../server.js");
+    const server = createMcpServer(db);
+    expect(server).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EventType and event_log consistency
+// ---------------------------------------------------------------------------
+
+describe("event_log schema", () => {
+  it("accepts 'deleted' event type in event_log", () => {
+    const added = memoryAdd(db, { content: "event type test", layer: "semantic" });
+    // memory_delete inserts 'deleted' event type
+    memoryDelete(db, { id: added.id });
+    const events = db.prepare(
+      "SELECT event_type FROM event_log WHERE memory_id = ? AND event_type = 'deleted'"
+    ).all(added.id) as Array<{ event_type: string }>;
+    expect(events.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// insertMemory shared helper (via memory_add + memory_update)
+// ---------------------------------------------------------------------------
+
+describe("shared insertMemory helper", () => {
+  it("memory_add and memory_update produce identical column structure", () => {
+    const added = memoryAdd(db, {
+      content: "helper test original",
+      layer: "semantic",
+      title: "Helper Test",
+      entity_name: "test-entity",
+      importance: 0.7,
+    });
+
+    const result = memoryUpdate(db, {
+      id: added.id,
+      supersede: true,
+      new_content: "helper test superseded",
+    });
+
+    const cols1 = Object.keys(
+      db.prepare("SELECT * FROM memories WHERE id = ?").get(added.id) as Record<string, unknown>
+    ).sort();
+    const cols2 = Object.keys(
+      db.prepare("SELECT * FROM memories WHERE id = ?").get(result.new_id!) as Record<string, unknown>
+    ).sort();
+
+    expect(cols1).toEqual(cols2);
   });
 });

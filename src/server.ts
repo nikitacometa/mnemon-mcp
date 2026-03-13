@@ -12,6 +12,11 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { memoryAdd, memoryAddSchema } from "./tools/memory-add.js";
@@ -63,7 +68,7 @@ export function loadExtraStopWords(): void {
 export function createMcpServer(db: Database.Database): Server {
   const server = new Server(
     { name: "mnemon-mcp", version },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: {}, resources: {}, prompts: {} } }
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -151,6 +156,198 @@ export function createMcpServer(db: Database.Database): Server {
         content: [{ type: "text", text: `Error: ${message}` }],
         isError: true,
       };
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // MCP Resources — read-only data endpoints for memory browsing
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [
+      {
+        uri: "memory://stats",
+        name: "Memory Statistics",
+        description: "Aggregate statistics per memory layer: totals, active count, avg confidence/importance, top entities",
+        mimeType: "application/json",
+      },
+      {
+        uri: "memory://recent",
+        name: "Recent Memories",
+        description: "Memories created or updated in the last 24 hours",
+        mimeType: "application/json",
+      },
+    ],
+  }));
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: [
+      {
+        uriTemplate: "memory://layer/{layer}",
+        name: "Memories by Layer",
+        description: "List active memories in a specific layer (episodic, semantic, procedural, resource)",
+        mimeType: "application/json",
+      },
+      {
+        uriTemplate: "memory://entity/{name}",
+        name: "Memories by Entity",
+        description: "List active memories about a specific entity",
+        mimeType: "application/json",
+      },
+    ],
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+    const { uri } = request.params;
+
+    if (uri === "memory://stats") {
+      const result = memoryInspect(db, {});
+      return {
+        contents: [{
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify(result, null, 2),
+        }],
+      };
+    }
+
+    if (uri === "memory://recent") {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+      const rows = db.prepare<[string], { id: string; layer: string; title: string | null; content: string; created_at: string }>(
+        `SELECT id, layer, title, content, created_at FROM memories
+         WHERE superseded_by IS NULL AND COALESCE(updated_at, created_at) >= ?
+         ORDER BY COALESCE(updated_at, created_at) DESC LIMIT 50`
+      ).all(since);
+      return {
+        contents: [{
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ since, count: rows.length, memories: rows }, null, 2),
+        }],
+      };
+    }
+
+    const layerMatch = uri.match(/^memory:\/\/layer\/(\w+)$/);
+    if (layerMatch) {
+      const layer = layerMatch[1]!;
+      const rows = db.prepare<[string], { id: string; title: string | null; content: string; entity_name: string | null; importance: number; created_at: string }>(
+        `SELECT id, title, content, entity_name, importance, created_at FROM memories
+         WHERE layer = ? AND superseded_by IS NULL
+         ORDER BY importance DESC, created_at DESC LIMIT 100`
+      ).all(layer);
+      return {
+        contents: [{
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ layer, count: rows.length, memories: rows }, null, 2),
+        }],
+      };
+    }
+
+    const entityMatch = uri.match(/^memory:\/\/entity\/(.+)$/);
+    if (entityMatch) {
+      const name = decodeURIComponent(entityMatch[1]!);
+      const rows = db.prepare<[string], { id: string; layer: string; title: string | null; content: string; importance: number; created_at: string }>(
+        `SELECT id, layer, title, content, importance, created_at FROM memories
+         WHERE entity_name = ? AND superseded_by IS NULL
+         ORDER BY importance DESC, created_at DESC LIMIT 100`
+      ).all(name);
+      return {
+        contents: [{
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ entity_name: name, count: rows.length, memories: rows }, null, 2),
+        }],
+      };
+    }
+
+    throw new Error(`Unknown resource URI: ${uri}`);
+  });
+
+  // -----------------------------------------------------------------------
+  // MCP Prompts — pre-built prompt templates for common memory operations
+  // -----------------------------------------------------------------------
+
+  server.setRequestHandler(ListPromptsRequestSchema, () => ({
+    prompts: [
+      {
+        name: "recall",
+        description: "Recall everything known about a topic from memory",
+        arguments: [
+          { name: "topic", description: "What to recall (e.g. 'human design', 'project architecture')", required: true },
+        ],
+      },
+      {
+        name: "context-load",
+        description: "Load relevant context for a task into the conversation",
+        arguments: [
+          { name: "task", description: "The task you're about to work on", required: true },
+          { name: "scope", description: "Optional scope filter (e.g. 'mnemon-mcp', 'personal')", required: false },
+        ],
+      },
+      {
+        name: "journal",
+        description: "Create a structured journal/session entry from a summary",
+        arguments: [
+          { name: "summary", description: "What happened in this session", required: true },
+        ],
+      },
+    ],
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, (request) => {
+    const { name, arguments: args } = request.params;
+
+    switch (name) {
+      case "recall": {
+        const topic = args?.["topic"] ?? "general";
+        return {
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text: `Search your memory for everything related to: "${topic}"\n\nUse memory_search with different queries and filters to find all relevant information. Try:\n1. FTS search for the topic directly\n2. Search with entity_name if it's about a specific person/concept/project\n3. Search across different layers (episodic for events, semantic for facts, procedural for rules)\n\nSynthesize the results into a comprehensive answer. If memories conflict, note the most recent version.`,
+              },
+            },
+          ],
+        };
+      }
+
+      case "context-load": {
+        const task = args?.["task"] ?? "current task";
+        const scope = args?.["scope"];
+        const scopeHint = scope ? `\nFilter by scope: "${scope}"` : "";
+        return {
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text: `Load relevant context for this task: "${task}"${scopeHint}\n\nSearch memory for:\n1. Procedural rules and conventions related to this task\n2. Semantic facts about the entities involved\n3. Recent episodic context (sessions, decisions, discussions)\n4. Relevant resources (references, documentation)\n\nPresent the loaded context as a structured briefing.`,
+              },
+            },
+          ],
+        };
+      }
+
+      case "journal": {
+        const summary = args?.["summary"] ?? "";
+        return {
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text: `Create a journal entry from this session summary:\n\n${summary}\n\nUse memory_add with:\n- layer: "episodic"\n- entity_type: "user"\n- event_at: current ISO timestamp\n- importance: 0.6\n- confidence: 0.9\n\nExtract any new facts, decisions, or preferences mentioned and store them as separate semantic memories.`,
+              },
+            },
+          ],
+        };
+      }
+
+      default:
+        throw new Error(`Unknown prompt: ${name}`);
     }
   });
 

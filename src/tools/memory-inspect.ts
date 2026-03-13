@@ -16,6 +16,15 @@ import type {
 
 const LAYERS: Layer[] = ["episodic", "semantic", "procedural", "resource"];
 
+/** Explicit column list matching MemoryRow — prevents leaking internal columns (stemmed_*). */
+const MEMORY_COLUMNS = `
+  id, layer, content, title, source, source_file, session_id,
+  created_at, updated_at, event_at, expires_at,
+  confidence, importance, access_count, last_accessed,
+  superseded_by, supersedes, entity_type, entity_name,
+  scope, embedding, meta
+`;
+
 interface LayerCountRow {
   layer: string;
   total: number;
@@ -25,7 +34,8 @@ interface LayerCountRow {
 }
 
 interface EntityCountRow {
-  entity_name: string | null;
+  layer: string;
+  entity_name: string;
   cnt: number;
 }
 
@@ -47,7 +57,7 @@ function inspectById(
 ): MemoryInspectOutput {
   const memory = db
     .prepare<[string], MemoryRow>(
-      `SELECT * FROM memories WHERE id = ?`
+      `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`
     )
     .get(id);
 
@@ -88,7 +98,7 @@ function buildSupersededChain(
   while (currentId && depth < maxDepth) {
     const row = db
       .prepare<[string], MemoryRow>(
-        `SELECT * FROM memories WHERE id = ?`
+        `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`
       )
       .get(currentId);
 
@@ -151,30 +161,32 @@ function inspectLayerStats(
     });
   }
 
-  // Fetch top entities per layer (up to 5 each)
-  for (const layer of LAYERS) {
-    const entityParams: unknown[] = [layer];
-    if (input.entity_name) entityParams.push(input.entity_name);
-
-    const entityRows = db
-      .prepare<unknown[], EntityCountRow>(
-        `SELECT entity_name, COUNT(*) AS cnt
-         FROM memories
-         WHERE layer = ?
-           AND superseded_by IS NULL
-           AND entity_name IS NOT NULL
-           ${input.entity_name ? "AND entity_name = ?" : ""}
-         GROUP BY entity_name
-         ORDER BY cnt DESC
-         LIMIT 5`
+  // Fetch top 5 entities per layer in a single query using window function
+  const entityRows = db
+    .prepare<unknown[], EntityCountRow>(
+      `WITH ranked AS (
+        SELECT
+          layer,
+          entity_name,
+          COUNT(*) AS cnt,
+          ROW_NUMBER() OVER (PARTITION BY layer ORDER BY COUNT(*) DESC) AS rn
+        FROM memories
+        WHERE superseded_by IS NULL
+          AND entity_name IS NOT NULL
+          ${layerFilter} ${entityFilter}
+        GROUP BY layer, entity_name
       )
-      .all(...entityParams);
+      SELECT layer, entity_name, cnt
+      FROM ranked
+      WHERE rn <= 5
+      ORDER BY layer, cnt DESC`
+    )
+    .all(...statsParams);
 
-    const stat = statsMap.get(layer);
+  for (const row of entityRows) {
+    const stat = statsMap.get(row.layer as Layer);
     if (stat) {
-      stat.top_entities = entityRows
-        .filter((r): r is EntityCountRow & { entity_name: string } => r.entity_name !== null)
-        .map((r) => ({ entity_name: r.entity_name, count: r.cnt }));
+      stat.top_entities.push({ entity_name: row.entity_name, count: row.cnt });
     }
   }
 

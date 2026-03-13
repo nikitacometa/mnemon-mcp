@@ -58,3 +58,38 @@ export function stemWord(word: string): string {
 export function stemTokens(tokens: string[]): string[] {
   return tokens.map(stemWord).filter((t) => t.length > 0);
 }
+
+/**
+ * Stem all words in a full text string for FTS5 index-time stemming.
+ *
+ * Splits on whitespace and punctuation boundaries, stems each token,
+ * and reassembles into a space-separated string. Non-alphanumeric tokens
+ * (punctuation, brackets, etc.) are dropped.
+ *
+ * Used to populate stemmed_content / stemmed_title columns so FTS5
+ * indexes stemmed forms — enabling exact stem matches instead of
+ * prefix-only matching at query time.
+ */
+export function stemText(text: string): string {
+  // Split on whitespace and common separators, keep only meaningful tokens
+  const tokens = text.split(/[\s\u2013\u2014\u2015—–,;:!?.…()[\]{}"'`/\\|]+/);
+
+  const result: string[] = [];
+  for (const token of tokens) {
+    if (!token) continue;
+
+    // Strip remaining non-letter/digit chars from edges (e.g. «quotes»)
+    const clean = token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    if (!clean || clean.length < 2) continue;
+
+    // Keep numbers as-is (dates, versions, IDs)
+    if (/^\d+$/.test(clean)) {
+      result.push(clean);
+      continue;
+    }
+
+    result.push(stemWord(clean));
+  }
+
+  return result.join(" ");
+}

@@ -74,7 +74,7 @@ export interface ImportLogRow {
   errors: string; // JSON string
 }
 
-export type EventType = "created" | "updated" | "superseded";
+export type EventType = "created" | "updated" | "superseded" | "deleted";
 
 export interface EventLogRow {
   id: string;

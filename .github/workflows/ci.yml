@@ -24,7 +24,7 @@ jobs:
 
       - run: npm test
 
-      - name: Smoke test
+      - name: Smoke test — tools
         timeout-minutes: 1
         run: |
           echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' \
@@ -35,4 +35,26 @@ jobs:
           tools = [t['name'] for t in d['result']['tools']]
           assert len(tools) == 6, f'Expected 6 tools, got {len(tools)}: {tools}'
           print(f'OK: {len(tools)} tools registered')
+          "
+
+      - name: Smoke test — resources & prompts
+        timeout-minutes: 1
+        run: |
+          echo '{"jsonrpc":"2.0","method":"resources/list","id":2}' \
+            | node dist/index.js 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          res = d['result']['resources']
+          assert len(res) == 2, f'Expected 2 resources, got {len(res)}'
+          print(f'OK: {len(res)} resources')
+          "
+          echo '{"jsonrpc":"2.0","method":"prompts/list","id":3}' \
+            | node dist/index.js 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          prompts = d['result']['prompts']
+          assert len(prompts) == 3, f'Expected 3 prompts, got {len(prompts)}'
+          print(f'OK: {len(prompts)} prompts')
           "

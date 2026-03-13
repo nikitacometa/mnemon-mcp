@@ -6,12 +6,8 @@
  */
 
 import type Database from "better-sqlite3";
-import { randomBytes } from "node:crypto";
 import type { Layer, MemoryAddInput, MemoryAddOutput, MemoryRow } from "../types.js";
-
-function generateId(): string {
-  return randomBytes(16).toString("hex");
-}
+import { generateId, insertMemory } from "./utils.js";
 
 function computeExpiresAt(ttlDays: number): string {
   const d = new Date();
@@ -48,59 +44,43 @@ export function memoryAdd(
     supersededIds.push(...existing.map((r) => r.id));
   }
 
-  const insertStmt = db.prepare(`
-    INSERT INTO memories (
-      id, layer, content, title, source, source_file,
-      session_id, event_at, expires_at,
-      confidence, importance,
-      supersedes,
-      entity_type, entity_name, scope, meta
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?,
-      ?, ?,
-      ?,
-      ?, ?, ?, ?
-    )
-  `);
-
-  const updateSuperseded = db.prepare(`
-    UPDATE memories SET superseded_by = ? WHERE id = ?
-  `);
-
-  const logEvent = db.prepare(`
-    INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-
   const actor = input.source ?? "api";
 
   // Run insert + supersede chain in a single transaction
   const run = db.transaction(() => {
-    insertStmt.run(
+    insertMemory(db, {
       id,
-      input.layer,
-      input.content,
-      input.title ?? null,
-      actor,
-      input.source_file ?? null,
-      input.session_id ?? null,
-      input.event_at ?? null,
+      layer: input.layer,
+      content: input.content,
+      title: input.title ?? null,
+      source: actor,
+      source_file: input.source_file ?? null,
+      session_id: input.session_id ?? null,
+      event_at: input.event_at ?? null,
       expires_at,
-      input.confidence ?? 0.8,
-      input.importance ?? 0.5,
-      supersededIds.length > 0 ? (supersededIds[supersededIds.length - 1] ?? null) : null,
-      input.entity_type ?? null,
-      input.entity_name ?? null,
-      input.scope ?? "global",
-      metaJson
-    );
+      confidence: input.confidence ?? 0.8,
+      importance: input.importance ?? 0.5,
+      supersedes: supersededIds.length > 0 ? (supersededIds[supersededIds.length - 1] ?? null) : null,
+      entity_type: input.entity_type ?? null,
+      entity_name: input.entity_name ?? null,
+      scope: input.scope ?? "global",
+      meta: metaJson,
+    });
 
-    logEvent.run(id, "created", actor, null, input.content);
+    db.prepare(
+      `INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, "created", actor, null, input.content);
 
     for (const oldId of supersededIds) {
-      updateSuperseded.run(id, oldId);
-      logEvent.run(oldId, "superseded", actor, null, null);
+      db.prepare(
+        `UPDATE memories SET superseded_by = ? WHERE id = ?`
+      ).run(id, oldId);
+
+      db.prepare(
+        `INSERT INTO event_log (memory_id, event_type, actor, old_content, new_content)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(oldId, "superseded", actor, null, null);
     }
   });
 
