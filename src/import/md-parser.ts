@@ -42,12 +42,14 @@ export function parseFrontmatter(raw: string): { frontmatter: Frontmatter; body:
 
     const key = kv[1]!;
     let value: unknown = kv[2]!.trim();
+    let wasQuoted = false;
 
-    // Strip surrounding quotes (YAML-style)
+    // Strip surrounding quotes (YAML-style) — quoted values stay as strings
     if (typeof value === "string" && value.length >= 2) {
       if ((value.startsWith('"') && value.endsWith('"')) ||
           (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
+        wasQuoted = true;
       }
     }
 
@@ -58,8 +60,8 @@ export function parseFrontmatter(raw: string): { frontmatter: Frontmatter; body:
         .split(",")
         .map((s) => s.trim());
     }
-    // Parse numbers
-    else if (typeof value === "string" && /^\d+(\.\d+)?$/.test(value)) {
+    // Parse numbers — only for unquoted values (quoted "0012" stays "0012")
+    else if (!wasQuoted && typeof value === "string" && /^\d+(\.\d+)?$/.test(value)) {
       value = parseFloat(value);
     }
 

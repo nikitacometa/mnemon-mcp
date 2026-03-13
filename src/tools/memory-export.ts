@@ -78,8 +78,10 @@ export function memoryExport(
     case "claude-md":
       content = formatClaudeMd(rows);
       break;
-    default:
-      content = JSON.stringify(rows, null, 2);
+    default: {
+      const _exhaustive: never = input.format;
+      throw new Error(`Unsupported export format: ${_exhaustive}`);
+    }
   }
 
   return {

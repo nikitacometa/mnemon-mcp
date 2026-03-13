@@ -205,20 +205,20 @@ export function memorySearch(
       const importanceBoost = 0.3 + 0.7 * row.importance;
       const decay = decayFactor(row.layer as Layer, row.last_accessed ?? row.created_at);
       return {
-      id: row.id,
-      layer: row.layer as Layer,
-      title: row.title,
-      content: row.content,
-      snippet: makeSnippet(row.content),
-      score: bm25Score * importanceBoost * decay,
-      entity_type: row.entity_type as EntityType | null,
-      entity_name: row.entity_name,
-      confidence: row.confidence,
-      importance: row.importance,
-      scope: row.scope,
-      created_at: row.created_at,
-      event_at: row.event_at,
-    };
+        id: row.id,
+        layer: row.layer as Layer,
+        title: row.title,
+        content: row.content,
+        snippet: makeSnippet(row.content),
+        score: bm25Score * importanceBoost * decay,
+        entity_type: row.entity_type as EntityType | null,
+        entity_name: row.entity_name,
+        confidence: row.confidence,
+        importance: row.importance,
+        scope: row.scope,
+        created_at: row.created_at,
+        event_at: row.event_at,
+      };
     })
     .sort((a, b) => b.score - a.score)
     .slice(offset, offset + limit);
@@ -249,8 +249,8 @@ function ftsSearch(
   let ftsQuery: string;
   try {
     ftsQuery = buildFtsQuery(input.query, "AND");
-  } catch {
-    return [];
+  } catch (err) {
+    throw new Error(`Invalid search query: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const conditions: string[] = ["fts.id = m.id"];
@@ -286,10 +286,10 @@ function ftsSearch(
     conditions.push("COALESCE(m.event_at, m.created_at) <= ?");
   }
 
-  // Temporal fact windows: filter by as_of date
+  // Temporal fact windows: filter by as_of date (use datetime() for safe comparison)
   if (input.as_of) {
-    conditions.push("(m.valid_from IS NULL OR m.valid_from <= ?)");
-    conditions.push("(m.valid_until IS NULL OR m.valid_until >= ?)");
+    conditions.push("(m.valid_from IS NULL OR datetime(m.valid_from) <= datetime(?))");
+    conditions.push("(m.valid_until IS NULL OR datetime(m.valid_until) >= datetime(?))");
   }
 
   const whereClause =
@@ -391,10 +391,10 @@ function exactSearch(
     params.push(input.date_to);
   }
 
-  // Temporal fact windows: filter by as_of date
+  // Temporal fact windows: filter by as_of date (use datetime() for safe comparison)
   if (input.as_of) {
-    conditions.push("(valid_from IS NULL OR valid_from <= ?)");
-    conditions.push("(valid_until IS NULL OR valid_until >= ?)");
+    conditions.push("(valid_from IS NULL OR datetime(valid_from) <= datetime(?))");
+    conditions.push("(valid_until IS NULL OR datetime(valid_until) >= datetime(?))");
     params.push(input.as_of);
     params.push(input.as_of);
   }

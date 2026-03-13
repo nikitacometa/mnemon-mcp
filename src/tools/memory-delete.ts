@@ -32,18 +32,27 @@ export function memoryDelete(
   }
 
   const run = db.transaction(() => {
-    // Re-activate predecessor if this memory superseded it
-    if (existing.supersedes) {
+    // If this memory has both a predecessor and a successor (middle of chain A→B→C),
+    // link them together: C.supersedes = A, A.superseded_by = C
+    if (existing.supersedes && existing.superseded_by) {
+      db.prepare(
+        `UPDATE memories SET superseded_by = ? WHERE id = ?`
+      ).run(existing.superseded_by, existing.supersedes);
+      db.prepare(
+        `UPDATE memories SET supersedes = ? WHERE id = ?`
+      ).run(existing.supersedes, existing.superseded_by);
+    }
+    // If this memory only has a predecessor (tail of chain), re-activate it
+    else if (existing.supersedes) {
       db.prepare(
         `UPDATE memories SET superseded_by = NULL WHERE id = ?`
       ).run(existing.supersedes);
     }
-
-    // Update successor's supersedes reference if this memory was superseded
-    if (existing.superseded_by) {
+    // If this memory only has a successor, clear the successor's supersedes link
+    else if (existing.superseded_by) {
       db.prepare(
-        `UPDATE memories SET supersedes = ? WHERE id = ?`
-      ).run(existing.supersedes, existing.superseded_by);
+        `UPDATE memories SET supersedes = NULL WHERE id = ?`
+      ).run(existing.superseded_by);
     }
 
     // Log deletion in event_log
@@ -58,7 +67,7 @@ export function memoryDelete(
 
   run();
 
-  return { deleted_id: input.id, deleted: true };
+  return { deleted_id: input.id };
 }
 
 /** JSON Schema for MCP tool registration */

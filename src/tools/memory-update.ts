@@ -223,7 +223,8 @@ export const memoryUpdateSchema = {
     },
     content: {
       type: "string",
-      description: "New content (used for in-place update or as new_content fallback)",
+      description:
+        "New content. For in-place update (supersede=false): replaces content directly. For supersede=true: used as fallback if new_content is not provided.",
     },
     title: {
       type: "string",

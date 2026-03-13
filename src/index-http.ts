@@ -70,13 +70,28 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
     return;
   }
 
-  // Body size limit
+  // Body size limit — check header first, then enforce on actual body
   const contentLength = parseInt(req.headers["content-length"] ?? "0", 10);
   if (contentLength > MAX_BODY_BYTES) {
     res.writeHead(413, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` }));
     return;
   }
+
+  // Enforce body size limit on actual stream (handles chunked transfer encoding)
+  req.socket.setMaxListeners(req.socket.getMaxListeners() + 1);
+  let receivedBytes = 0;
+  let aborted = false;
+  req.on("data", (chunk: Buffer) => {
+    receivedBytes += chunk.length;
+    if (receivedBytes > MAX_BODY_BYTES && !aborted) {
+      aborted = true;
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` }));
+      req.destroy();
+    }
+  });
+  if (aborted) return;
 
   const transport = new StreamableHTTPServerTransport({});
   const server = createMcpServer(db);

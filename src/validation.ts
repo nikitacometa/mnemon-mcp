@@ -28,7 +28,7 @@ export const MemoryAddSchema = z.object({
   scope: z.string().max(200).optional(),
   source: z.string().max(200).optional(),
   source_file: z.string().max(1000).optional(),
-  session_id: z.string().optional(),
+  session_id: z.string().max(200).optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
   valid_from: isoDatePrefix.optional(),
   valid_until: isoDatePrefix.optional(),

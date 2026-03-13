@@ -16,7 +16,7 @@ npm run build
 npm test
 ```
 
-Requires Node.js 20+ and TypeScript 5.9.
+Requires Node.js 22+ and TypeScript 5.9.
 
 ## Running Locally
 

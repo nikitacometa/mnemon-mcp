@@ -69,7 +69,7 @@ Different kinds of knowledge have different lifetimes and retrieval patterns. A 
 
 Two modes, both with layer/entity/scope/date/confidence filters:
 
-**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements automatically. Scores are boosted by importance weight: `bm25 × (0.5 + 0.5 × importance)`.
+**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements automatically. Scores are boosted by importance and recency: `bm25 × (0.3 + 0.7 × importance) × decay(layer)`. Episodic memories decay with a 30-day half-life, resource with 90 days; semantic and procedural don't decay.
 
 **Exact mode** — `LIKE` substring match for precise lookups. Useful when you need an exact phrase rather than tokenized matching.
 
@@ -140,7 +140,7 @@ Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM
 ```bash
 npm run dev        # run via tsx (no build step)
 npm run build      # TypeScript → dist/
-npm test           # 74 tests (vitest)
+npm test           # 123 tests (vitest)
 npm run bench      # performance benchmarks
 npm run db:backup  # backup database
 ```

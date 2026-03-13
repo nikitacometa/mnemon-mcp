@@ -162,7 +162,6 @@ export interface MemoryDeleteInput {
 
 export interface MemoryDeleteOutput {
   deleted_id: string;
-  deleted: boolean;
 }
 
 export interface MemoryExportOutput {

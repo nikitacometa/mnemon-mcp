@@ -61,6 +61,19 @@ Content`;
     expect(frontmatter["title"]).toBe("A title with: colons");
     expect(frontmatter["note"]).toBe("single quoted value");
   });
+
+  it("preserves quoted numeric strings without coercing to number", () => {
+    const raw = `---
+version: "0012"
+id: "1.0"
+plain_num: 42
+---
+Content`;
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter["version"]).toBe("0012");
+    expect(frontmatter["id"]).toBe("1.0");
+    expect(frontmatter["plain_num"]).toBe(42);
+  });
 });
 
 describe("splitByHeading", () => {

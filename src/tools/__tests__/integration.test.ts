@@ -314,7 +314,6 @@ describe("memory_delete", () => {
     const added = memoryAdd(db, { content: "delete me", layer: "semantic" });
     const result = memoryDelete(db, { id: added.id });
 
-    expect(result.deleted).toBe(true);
     expect(result.deleted_id).toBe(added.id);
 
     const row = db.prepare("SELECT id FROM memories WHERE id = ?").get(added.id);
@@ -350,6 +349,29 @@ describe("memory_delete", () => {
 
     const events = db.prepare("SELECT event_type FROM event_log WHERE memory_id = ? ORDER BY occurred_at DESC").all(added.id) as Array<{ event_type: string }>;
     expect(events.some(e => e.event_type === "deleted")).toBe(true);
+  });
+
+  it("correctly re-links chain when deleting middle element A→B→C", () => {
+    // Create chain: v1 → v2 → v3
+    const v1 = memoryAdd(db, { content: "chain v1", layer: "semantic", source_file: "chain-mid.md" });
+    const v2 = memoryAdd(db, { content: "chain v2", layer: "semantic", source_file: "chain-mid.md" });
+    const v3 = memoryAdd(db, { content: "chain v3", layer: "semantic", source_file: "chain-mid.md" });
+
+    // Delete v2 (middle) — should link v1←v3
+    memoryDelete(db, { id: v2.id });
+
+    const v1Row = db.prepare("SELECT superseded_by FROM memories WHERE id = ?").get(v1.id) as { superseded_by: string | null };
+    const v3Row = db.prepare("SELECT supersedes FROM memories WHERE id = ?").get(v3.id) as { supersedes: string | null };
+
+    // v1 should now be superseded by v3 (not null, not v2)
+    expect(v1Row.superseded_by).toBe(v3.id);
+    // v3 should now supersede v1 (not v2)
+    expect(v3Row.supersedes).toBe(v1.id);
+
+    // Only v3 should be active (v1 still superseded)
+    const search = memorySearch(db, { query: "chain", mode: "exact" });
+    expect(search.memories.length).toBe(1);
+    expect(search.memories[0]!.id).toBe(v3.id);
   });
 
   it("throws on non-existent ID", () => {
