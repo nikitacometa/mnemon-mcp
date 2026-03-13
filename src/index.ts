@@ -1,8 +1,8 @@
 /**
  * mnemon-mcp: MCP server entry point.
  *
- * Exposes 4 tools: memory_add, memory_search, memory_update, memory_inspect.
- * Stubs (memory_export, style_extract) removed from listing until implemented.
+ * Exposes 5 tools: memory_add, memory_search, memory_update, memory_inspect, memory_export.
+ * style_extract is not yet implemented.
  *
  * Transport: stdio — suitable for Claude Code MCP config.
  * Database: ~/.mnemon-mcp/memory.db (SQLite + FTS5, WAL mode).
@@ -20,12 +20,14 @@ import { memoryAdd, memoryAddSchema } from "./tools/memory-add.js";
 import { memoryInspect, memoryInspectSchema } from "./tools/memory-inspect.js";
 import { memorySearch, memorySearchSchema } from "./tools/memory-search.js";
 import { memoryUpdate, memoryUpdateSchema } from "./tools/memory-update.js";
+import { memoryExport, memoryExportSchema } from "./tools/memory-export.js";
 
 import {
   MemoryAddSchema,
   MemorySearchSchema,
   MemoryUpdateSchema,
   MemoryInspectSchema,
+  MemoryExportSchema,
 } from "./validation.js";
 
 import { loadConfig } from "./import/config-loader.js";
@@ -33,6 +35,7 @@ import { addExtraStopWords } from "./stop-words.js";
 
 import type {
   MemoryAddInput,
+  MemoryExportInput,
   MemoryInspectInput,
   MemorySearchInput,
   MemoryUpdateInput,
@@ -101,6 +104,12 @@ server.setRequestHandler(ListToolsRequestSchema, () => {
           "Inspect memory details or layer statistics. Without id: returns aggregate stats per layer (total, active, superseded, avg_confidence, top_entities). With id: returns the full memory row and optionally its history chain.",
         inputSchema: memoryInspectSchema,
       },
+      {
+        name: "memory_export",
+        description:
+          "Export memories to JSON, Markdown, or claude-md (compact LLM-optimized) format. Supports filtering by layer, scope, date range. Returns the exported content as a string.",
+        inputSchema: memoryExportSchema,
+      },
     ],
   };
 });
@@ -135,6 +144,12 @@ server.setRequestHandler(CallToolRequestSchema, (request) => {
       case "memory_inspect": {
         const input = MemoryInspectSchema.parse(args) as MemoryInspectInput;
         const result = memoryInspect(db, input);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "memory_export": {
+        const input = MemoryExportSchema.parse(args) as MemoryExportInput;
+        const result = memoryExport(db, input);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 

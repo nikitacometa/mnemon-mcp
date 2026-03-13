@@ -140,6 +140,22 @@ export interface MemoryInspectInput {
   include_history?: boolean;
 }
 
+export interface MemoryExportInput {
+  format: "json" | "markdown" | "claude-md";
+  layers?: Layer[];
+  scope?: string;
+  include_superseded?: boolean;
+  date_from?: string;
+  date_to?: string;
+  output_path?: string;
+}
+
+export interface MemoryExportOutput {
+  format: string;
+  count: number;
+  content: string;
+}
+
 
 // ---------------------------------------------------------------------------
 // Tool output types

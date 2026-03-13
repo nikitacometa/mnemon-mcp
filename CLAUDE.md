@@ -46,6 +46,7 @@ echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
 ```
 src/
   index.ts              MCP server entry (stdio transport, tool dispatch)
+  index-http.ts         HTTP transport entry (StreamableHTTP, Bearer auth)
   db.ts                 SQLite schema, migrations, indexes, FTS5 triggers
   types.ts              TypeScript types (mirrors SQLite schema)
   tools/
@@ -53,7 +54,7 @@ src/
     memory-search.ts    FTS5 search with layer/scope/date filtering
     memory-update.ts    In-place update or superseding chain
     memory-inspect.ts   Layer stats or single-memory history trace
-    memory-export.ts    [STUB] Export to json/markdown
+    memory-export.ts    Export to json/markdown/claude-md with layer/scope/date filters
     style-extract.ts    [STUB] Writing style analysis
   import/
     cli.ts              CLI entry for KB import
@@ -90,7 +91,7 @@ src/
 | memory_search | Working | FTS5 with layer/entity/date/scope filters |
 | memory_update | Working | In-place or superseding chain |
 | memory_inspect | Working | Stats per layer or single memory history |
-| memory_export | Stub | Throws "not implemented" |
+| memory_export | Working | Export to json/markdown/claude-md with filters |
 | style_extract | Stub | Throws "not implemented" |
 
 ## MCP Config

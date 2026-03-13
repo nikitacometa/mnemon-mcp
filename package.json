@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "import:kb": "tsx src/import/cli.ts --kb-path ${MNEMON_KB_PATH:-.}",
     "test": "vitest run",
+    "start:http": "node dist/index-http.js",
     "db:backup": "bash -c \"sqlite3 $HOME/.mnemon-mcp/memory.db '.backup $HOME/.mnemon-mcp/memory.db.bak' && echo 'Backup saved to ~/.mnemon-mcp/memory.db.bak'\""
   },
   "keywords": [
