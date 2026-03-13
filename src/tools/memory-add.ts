@@ -67,6 +67,8 @@ export function memoryAdd(
       entity_name: input.entity_name ?? null,
       scope: input.scope ?? "global",
       meta: metaJson,
+      valid_from: input.valid_from ?? null,
+      valid_until: input.valid_until ?? null,
     });
 
     db.prepare(
@@ -215,6 +217,14 @@ export const memoryAddSchema = {
     source_file: {
       type: "string",
       description: "Original file path for imports",
+    },
+    valid_from: {
+      type: "string",
+      description: "ISO 8601 date when this fact becomes valid (null = always valid)",
+    },
+    valid_until: {
+      type: "string",
+      description: "ISO 8601 date when this fact stops being valid (null = no end date)",
     },
     meta: {
       type: "object",

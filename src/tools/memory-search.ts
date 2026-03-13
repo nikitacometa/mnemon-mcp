@@ -24,6 +24,14 @@ import { stemWord } from "../stemmer.js";
 const DEFAULT_LIMIT = 10;
 const SNIPPET_TOKENS = 64;
 
+/** Resolve entity alias to canonical name. Returns the input if no alias exists. */
+function resolveEntityName(db: Database.Database, name: string): string {
+  const row = db.prepare<[string], { canonical: string }>(
+    `SELECT canonical FROM entity_aliases WHERE alias = ?`
+  ).get(name);
+  return row ? row.canonical : name;
+}
+
 /** Escape FTS5 special characters and trailing punctuation to prevent syntax errors */
 function escapeFtsToken(token: string): string {
   // Remove FTS5 query syntax chars + general punctuation from natural language queries
@@ -259,7 +267,10 @@ function ftsSearch(
     conditions.push(`m.layer IN (${placeholders})`);
   }
 
-  if (input.entity_name) {
+  // Resolve entity alias to canonical name
+  const resolvedEntity = input.entity_name ? resolveEntityName(db, input.entity_name) : undefined;
+
+  if (resolvedEntity) {
     conditions.push("m.entity_name = ?");
   }
 
@@ -273,6 +284,12 @@ function ftsSearch(
 
   if (input.date_to) {
     conditions.push("COALESCE(m.event_at, m.created_at) <= ?");
+  }
+
+  // Temporal fact windows: filter by as_of date
+  if (input.as_of) {
+    conditions.push("(m.valid_from IS NULL OR m.valid_from <= ?)");
+    conditions.push("(m.valid_until IS NULL OR m.valid_until >= ?)");
   }
 
   const whereClause =
@@ -295,10 +312,14 @@ function ftsSearch(
   if (input.layers && input.layers.length > 0) {
     filterParams.push(...input.layers);
   }
-  if (input.entity_name) filterParams.push(input.entity_name);
+  if (resolvedEntity) filterParams.push(resolvedEntity);
   if (input.scope) filterParams.push(input.scope);
   if (input.date_from) filterParams.push(input.date_from);
   if (input.date_to) filterParams.push(input.date_to);
+  if (input.as_of) {
+    filterParams.push(input.as_of);
+    filterParams.push(input.as_of);
+  }
 
   const fetchLimit = limit * 2; // fetch extra to allow post-filter
   const params: unknown[] = [ftsQuery, ...filterParams, fetchLimit];
@@ -350,8 +371,9 @@ function exactSearch(
   }
 
   if (input.entity_name) {
+    const resolvedEntity = resolveEntityName(db, input.entity_name);
     conditions.push("entity_name = ?");
-    params.push(input.entity_name);
+    params.push(resolvedEntity);
   }
 
   if (input.scope) {
@@ -367,6 +389,14 @@ function exactSearch(
   if (input.date_to) {
     conditions.push("COALESCE(event_at, created_at) <= ?");
     params.push(input.date_to);
+  }
+
+  // Temporal fact windows: filter by as_of date
+  if (input.as_of) {
+    conditions.push("(valid_from IS NULL OR valid_from <= ?)");
+    conditions.push("(valid_until IS NULL OR valid_until >= ?)");
+    params.push(input.as_of);
+    params.push(input.as_of);
   }
 
   params.push(limit);
@@ -438,6 +468,11 @@ export const memorySearchSchema = {
     offset: {
       type: "number",
       description: "Number of results to skip (for pagination, default 0)",
+    },
+    as_of: {
+      type: "string",
+      description:
+        "ISO 8601 date to filter temporal facts. Only returns memories where valid_from <= as_of and valid_until >= as_of (nulls treated as unbounded).",
     },
     mode: {
       type: "string",

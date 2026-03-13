@@ -27,6 +27,8 @@ export interface InsertMemoryParams {
   entity_name: string | null;
   scope: string;
   meta: string;
+  valid_from: string | null;
+  valid_until: string | null;
 }
 
 /** Insert a memory row with automatic index-time stemming. */
@@ -41,13 +43,15 @@ export function insertMemory(db: Database.Database, params: InsertMemoryParams):
       confidence, importance,
       supersedes,
       entity_type, entity_name, scope, meta,
-      stemmed_content, stemmed_title
+      stemmed_content, stemmed_title,
+      valid_from, valid_until
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?,
       ?,
       ?, ?, ?, ?,
+      ?, ?,
       ?, ?
     )
   `).run(
@@ -56,6 +60,7 @@ export function insertMemory(db: Database.Database, params: InsertMemoryParams):
     params.event_at, params.expires_at, params.confidence,
     params.importance, params.supersedes, params.entity_type,
     params.entity_name, params.scope, params.meta,
-    stemmedContent, stemmedTitle
+    stemmedContent, stemmedTitle,
+    params.valid_from, params.valid_until
   );
 }

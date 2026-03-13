@@ -29,6 +29,8 @@ interface MemoryLookupRow {
   entity_name: string | null;
   scope: string;
   meta: string;
+  valid_from: string | null;
+  valid_until: string | null;
 }
 
 export function memoryUpdate(
@@ -40,7 +42,8 @@ export function memoryUpdate(
     .prepare<[string], MemoryLookupRow>(
       `SELECT id, layer, content, title, source, source_file, session_id,
               event_at, expires_at, confidence, importance, supersedes,
-              superseded_by, entity_type, entity_name, scope, meta
+              superseded_by, entity_type, entity_name, scope, meta,
+              valid_from, valid_until
        FROM memories WHERE id = ?`
     )
     .get(input.id);
@@ -181,6 +184,8 @@ function createSupersedingEntry(
       entity_name: existing.entity_name,
       scope: existing.scope,
       meta: metaJson,
+      valid_from: existing.valid_from,
+      valid_until: existing.valid_until,
     });
 
     // Mark the old entry as superseded

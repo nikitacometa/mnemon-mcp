@@ -22,7 +22,7 @@ const MEMORY_COLUMNS = `
   created_at, updated_at, event_at, expires_at,
   confidence, importance, access_count, last_accessed,
   superseded_by, supersedes, entity_type, entity_name,
-  scope, embedding, meta
+  scope, embedding, meta, valid_from, valid_until
 `;
 
 interface LayerCountRow {

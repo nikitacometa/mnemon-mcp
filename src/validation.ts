@@ -30,6 +30,8 @@ export const MemoryAddSchema = z.object({
   source_file: z.string().max(1000).optional(),
   session_id: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
+  valid_from: isoDatePrefix.optional(),
+  valid_until: isoDatePrefix.optional(),
 });
 
 export const MemorySearchSchema = z.object({
@@ -45,6 +47,7 @@ export const MemorySearchSchema = z.object({
   limit: z.number().min(1).max(100).optional(),
   offset: z.number().min(0).optional(),
   mode: SearchMode.optional(),
+  as_of: isoDatePrefix.optional(),
 });
 
 export const MemoryUpdateSchema = z.object({

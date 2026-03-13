@@ -50,6 +50,8 @@ export interface MemoryRow {
   scope: string;
   embedding: Buffer | null;
   meta: string; // JSON string
+  valid_from: string | null;
+  valid_until: string | null;
 }
 
 export interface SessionRow {
@@ -106,6 +108,8 @@ export interface MemoryAddInput {
   source_file?: string;
   session_id?: string;
   meta?: Record<string, unknown>;
+  valid_from?: string;
+  valid_until?: string;
 }
 
 export interface MemorySearchInput {
@@ -121,6 +125,7 @@ export interface MemorySearchInput {
   limit?: number;
   offset?: number;
   mode?: SearchMode;
+  as_of?: string;
 }
 
 export interface MemoryUpdateInput {

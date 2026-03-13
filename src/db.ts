@@ -16,7 +16,7 @@ const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -61,6 +61,11 @@ function runMigrations(db: Database.Database): void {
     applyMigration3(db);
     backfillStemmedContent(db);
     db.pragma("user_version = 3");
+  }
+
+  if (currentVersion < 4) {
+    applyMigration4(db);
+    db.pragma("user_version = 4");
   }
 }
 
@@ -329,6 +334,27 @@ function applyMigration3(db: Database.Database): void {
     `).run();
 
     // Delete trigger unchanged — no stemming needed for DELETE
+  })();
+}
+
+/**
+ * Migration v4: Temporal fact windows + entity aliases.
+ * - Add valid_from and valid_until columns for time-scoped facts
+ * - Create entity_aliases table for alias resolution in search
+ */
+function applyMigration4(db: Database.Database): void {
+  db.transaction(() => {
+    db.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
+    db.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS entity_aliases (
+        canonical TEXT NOT NULL,
+        alias TEXT NOT NULL UNIQUE,
+        PRIMARY KEY (canonical, alias),
+        CHECK (alias != canonical)
+      )
+    `).run();
   })();
 }
 

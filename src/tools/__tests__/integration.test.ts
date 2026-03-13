@@ -899,3 +899,171 @@ describe("shared insertMemory helper", () => {
     expect(cols1).toEqual(cols2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Temporal fact windows (valid_from / valid_until + as_of)
+// ---------------------------------------------------------------------------
+
+describe("temporal fact windows", () => {
+  it("stores valid_from and valid_until on insert", () => {
+    const result = memoryAdd(db, {
+      content: "CEO is Alice",
+      layer: "semantic",
+      entity_name: "company",
+      valid_from: "2025-01-01",
+      valid_until: "2025-12-31",
+    });
+
+    const row = db.prepare("SELECT valid_from, valid_until FROM memories WHERE id = ?")
+      .get(result.id) as { valid_from: string | null; valid_until: string | null };
+    expect(row.valid_from).toBe("2025-01-01");
+    expect(row.valid_until).toBe("2025-12-31");
+  });
+
+  it("defaults valid_from/valid_until to null", () => {
+    const result = memoryAdd(db, { content: "timeless fact", layer: "semantic" });
+    const row = db.prepare("SELECT valid_from, valid_until FROM memories WHERE id = ?")
+      .get(result.id) as { valid_from: string | null; valid_until: string | null };
+    expect(row.valid_from).toBeNull();
+    expect(row.valid_until).toBeNull();
+  });
+
+  it("as_of filter excludes memories not yet valid", () => {
+    memoryAdd(db, {
+      content: "future CEO is Bob",
+      layer: "semantic",
+      entity_name: "company",
+      valid_from: "2027-01-01",
+    });
+    memoryAdd(db, {
+      content: "current CEO is Alice",
+      layer: "semantic",
+      entity_name: "company",
+    });
+
+    const result = memorySearch(db, { query: "CEO", as_of: "2026-06-01" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.content).toContain("Alice");
+  });
+
+  it("as_of filter excludes memories that expired before the date", () => {
+    memoryAdd(db, {
+      content: "old CEO was Charlie",
+      layer: "semantic",
+      entity_name: "company",
+      valid_until: "2024-12-31",
+    });
+    memoryAdd(db, {
+      content: "current CEO is Alice",
+      layer: "semantic",
+      entity_name: "company",
+    });
+
+    const result = memorySearch(db, { query: "CEO", as_of: "2025-06-01" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.content).toContain("Alice");
+  });
+
+  it("as_of filter returns memory within valid window", () => {
+    memoryAdd(db, {
+      content: "Q1 target is 100K",
+      layer: "semantic",
+      valid_from: "2026-01-01",
+      valid_until: "2026-03-31",
+    });
+
+    const inside = memorySearch(db, { query: "target", as_of: "2026-02-15" });
+    expect(inside.memories.length).toBe(1);
+
+    const outside = memorySearch(db, { query: "target", as_of: "2026-05-01" });
+    expect(outside.memories.length).toBe(0);
+  });
+
+  it("as_of works with exact search mode", () => {
+    memoryAdd(db, {
+      content: "seasonal discount 20%",
+      layer: "semantic",
+      valid_from: "2026-06-01",
+      valid_until: "2026-08-31",
+    });
+
+    const inside = memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-07-15" });
+    expect(inside.memories.length).toBe(1);
+
+    const outside = memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-01-01" });
+    expect(outside.memories.length).toBe(0);
+  });
+
+  it("memories with null valid_from/valid_until always match as_of", () => {
+    memoryAdd(db, { content: "eternal fact xyz", layer: "semantic" });
+    const result = memorySearch(db, { query: "eternal fact xyz", as_of: "2000-01-01" });
+    expect(result.memories.length).toBe(1);
+  });
+
+  it("superseding entry inherits valid_from/valid_until", () => {
+    const v1 = memoryAdd(db, {
+      content: "v1 with temporal",
+      layer: "semantic",
+      valid_from: "2025-01-01",
+      valid_until: "2025-12-31",
+    });
+    const result = memoryUpdate(db, { id: v1.id, supersede: true, new_content: "v2 with temporal" });
+
+    const row = db.prepare("SELECT valid_from, valid_until FROM memories WHERE id = ?")
+      .get(result.new_id!) as { valid_from: string | null; valid_until: string | null };
+    expect(row.valid_from).toBe("2025-01-01");
+    expect(row.valid_until).toBe("2025-12-31");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Entity aliases
+// ---------------------------------------------------------------------------
+
+describe("entity aliases", () => {
+  function insertAlias(canonical: string, alias: string) {
+    db.prepare("INSERT INTO entity_aliases (canonical, alias) VALUES (?, ?)").run(canonical, alias);
+  }
+
+  it("FTS search resolves alias to canonical entity_name", () => {
+    memoryAdd(db, { content: "Nikita prefers dark mode", layer: "semantic", entity_name: "nikita" });
+    insertAlias("nikita", "ник");
+
+    const result = memorySearch(db, { query: "dark mode", entity_name: "ник" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.entity_name).toBe("nikita");
+  });
+
+  it("exact search resolves alias to canonical entity_name", () => {
+    memoryAdd(db, { content: "Nikita lives in Bangkok", layer: "semantic", entity_name: "nikita" });
+    insertAlias("nikita", "никита");
+
+    const result = memorySearch(db, { query: "Bangkok", mode: "exact", entity_name: "никита" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.entity_name).toBe("nikita");
+  });
+
+  it("search with canonical name still works", () => {
+    memoryAdd(db, { content: "canonical name test", layer: "semantic", entity_name: "alice" });
+    insertAlias("alice", "алиса");
+
+    const result = memorySearch(db, { query: "canonical name test", entity_name: "alice" });
+    expect(result.memories.length).toBe(1);
+  });
+
+  it("unknown alias passes through unchanged", () => {
+    memoryAdd(db, { content: "unknown alias test content", layer: "semantic", entity_name: "bob" });
+
+    const result = memorySearch(db, { query: "unknown alias test", entity_name: "bob" });
+    expect(result.memories.length).toBe(1);
+  });
+
+  it("alias table enforces unique alias constraint", () => {
+    insertAlias("nikita", "nick");
+    expect(() => insertAlias("alice", "nick")).toThrow();
+  });
+
+  it("alias cannot equal canonical (CHECK constraint)", () => {
+    expect(() => insertAlias("nikita", "nikita")).toThrow();
+  });
+});
