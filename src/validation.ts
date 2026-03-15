@@ -85,6 +85,10 @@ export const MemoryDeleteSchema = z.object({
   id: z.string().min(1).describe("ID of the memory to permanently delete"),
 });
 
+export const MemoryHealthSchema = z.object({
+  cleanup: z.boolean().optional().describe("When true, garbage-collect expired entries (TTL past due). Default false — report only."),
+});
+
 /**
  * Convert a Zod schema to MCP-compatible JSON Schema.
  * Strips $schema and additionalProperties fields that MCP doesn't use.
@@ -103,3 +107,4 @@ export const memoryUpdateToolSchema = zodToToolSchema(MemoryUpdateSchema);
 export const memoryInspectToolSchema = zodToToolSchema(MemoryInspectSchema);
 export const memoryExportToolSchema = zodToToolSchema(MemoryExportSchema);
 export const memoryDeleteToolSchema = zodToToolSchema(MemoryDeleteSchema);
+export const memoryHealthToolSchema = zodToToolSchema(MemoryHealthSchema);

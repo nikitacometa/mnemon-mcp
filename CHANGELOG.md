@@ -5,13 +5,19 @@ All notable changes to mnemon-mcp will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `memory_health` tool: diagnostic report with expired entries, orphaned chains, stale memories, low-confidence entries, and optional GC cleanup
 - Optional vector search with BYOK embeddings (OpenAI, Ollama)
 - sqlite-vec integration for cosine similarity KNN search
 - Hybrid search mode combining FTS5 + vector via Reciprocal Rank Fusion (RRF)
 - `mode: "vector"` and `mode: "hybrid"` options in memory_search
 - Auto-embed on memory_add when embedding provider is configured
 - Embedder abstraction with OpenAI and Ollama providers
-- New env vars: MNEMON_EMBEDDING_PROVIDER, MNEMON_EMBEDDING_API_KEY, MNEMON_EMBEDDING_MODEL, MNEMON_EMBEDDING_DIMENSIONS, MNEMON_OLLAMA_URL
+- CORS headers for HTTP transport (configurable via `MNEMON_CORS_ORIGIN`)
+- Rate limiting for HTTP transport (100 req/min per IP, configurable via `MNEMON_RATE_LIMIT`)
+- New env vars: MNEMON_EMBEDDING_PROVIDER, MNEMON_EMBEDDING_API_KEY, MNEMON_EMBEDDING_MODEL, MNEMON_EMBEDDING_DIMENSIONS, MNEMON_OLLAMA_URL, MNEMON_CORS_ORIGIN, MNEMON_RATE_LIMIT
+
+### Changed
+- Tool input schemas now generated from Zod via `z.toJSONSchema()` — single source of truth, no manual JSON Schema duplication
 
 ## [1.0.0] - 2026-03-15
 

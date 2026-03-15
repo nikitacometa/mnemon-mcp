@@ -164,6 +164,25 @@ export interface MemoryDeleteOutput {
   deleted_id: string;
 }
 
+export interface MemoryHealthInput {
+  cleanup?: boolean;
+}
+
+export interface MemoryHealthOutput {
+  status: "healthy" | "warning" | "degraded";
+  issues: string[];
+  stats: {
+    total_active: number;
+    total_superseded: number;
+    by_layer: Record<string, number>;
+  };
+  expired: Array<{ id: string; title: string | null; expires_at: string }>;
+  orphaned_chains: Array<{ id: string; missing_supersedes: string }>;
+  stale_count: number;
+  low_confidence_count: number;
+  cleaned_expired?: number;
+}
+
 export interface MemoryExportOutput {
   format: string;
   count: number;

@@ -12,6 +12,7 @@ import { memoryUpdate } from "../memory-update.js";
 import { memoryInspect } from "../memory-inspect.js";
 import { memoryDelete } from "../memory-delete.js";
 import { memoryExport } from "../memory-export.js";
+import { memoryHealth } from "../memory-health.js";
 import { stemText } from "../../stemmer.js";
 import type { MemoryAddInput, MemorySearchInput } from "../../types.js";
 
@@ -1179,5 +1180,101 @@ describe("vector search — graceful degradation", () => {
     memoryAdd(db, { content: "exact vector test", layer: "semantic" });
     const result = await memorySearch(db, { query: "exact vector test", mode: "exact" });
     expect(result.memories.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_health — diagnostic tool
+// ---------------------------------------------------------------------------
+
+describe("memory_health", () => {
+  it("returns healthy status on empty database", () => {
+    const result = memoryHealth(db, {});
+    expect(result.status).toBe("healthy");
+    expect(result.issues).toEqual([]);
+    expect(result.stats.total_active).toBe(0);
+    expect(result.stats.total_superseded).toBe(0);
+    expect(result.expired).toEqual([]);
+    expect(result.orphaned_chains).toEqual([]);
+  });
+
+  it("reports per-layer stats", () => {
+    memoryAdd(db, { content: "sem fact", layer: "semantic" });
+    memoryAdd(db, { content: "ep event", layer: "episodic" });
+    memoryAdd(db, { content: "proc rule", layer: "procedural" });
+    const result = memoryHealth(db, {});
+    expect(result.stats.total_active).toBe(3);
+    expect(result.stats.by_layer["semantic"]).toBe(1);
+    expect(result.stats.by_layer["episodic"]).toBe(1);
+    expect(result.stats.by_layer["procedural"]).toBe(1);
+  });
+
+  it("detects expired entries", () => {
+    const m = memoryAdd(db, { content: "expiring memory", layer: "semantic", ttl_days: 1 });
+    // Simulate expired: set expires_at to yesterday
+    db.prepare("UPDATE memories SET expires_at = datetime('now', '-1 day') WHERE id = ?").run(m.id);
+    const result = memoryHealth(db, {});
+    expect(result.expired.length).toBe(1);
+    expect(result.expired[0]!.id).toBe(m.id);
+    expect(result.issues.some((i) => i.includes("expired"))).toBe(true);
+  });
+
+  it("cleanup=true garbage-collects expired entries", () => {
+    const m = memoryAdd(db, { content: "gc target", layer: "semantic", ttl_days: 1 });
+    db.prepare("UPDATE memories SET expires_at = datetime('now', '-1 day') WHERE id = ?").run(m.id);
+
+    const result = memoryHealth(db, { cleanup: true });
+    expect(result.cleaned_expired).toBe(1);
+
+    // Verify deleted
+    const row = db.prepare("SELECT id FROM memories WHERE id = ?").get(m.id);
+    expect(row).toBeUndefined();
+  });
+
+  it("detects orphaned superseding chains", () => {
+    const m = memoryAdd(db, { content: "orphan child", layer: "semantic" });
+    // Disable FK checks to simulate orphaned data (e.g. manual DB edit)
+    db.pragma("foreign_keys = OFF");
+    db.prepare("UPDATE memories SET supersedes = ? WHERE id = ?").run("nonexistent-id-12345", m.id);
+    db.pragma("foreign_keys = ON");
+
+    const result = memoryHealth(db, {});
+    expect(result.orphaned_chains.length).toBe(1);
+    expect(result.orphaned_chains[0]!.id).toBe(m.id);
+    expect(result.orphaned_chains[0]!.missing_supersedes).toBe("nonexistent-id-12345");
+  });
+
+  it("detects low-confidence entries", () => {
+    memoryAdd(db, { content: "low conf memory", layer: "semantic", confidence: 0.1 });
+    memoryAdd(db, { content: "high conf memory", layer: "semantic", confidence: 0.9 });
+
+    const result = memoryHealth(db, {});
+    expect(result.low_confidence_count).toBe(1);
+  });
+
+  it("counts superseded entries", () => {
+    const v1 = memoryAdd(db, { content: "version 1", layer: "semantic" });
+    memoryUpdate(db, { id: v1.id, supersede: true, new_content: "version 2" });
+
+    const result = memoryHealth(db, {});
+    expect(result.stats.total_superseded).toBe(1);
+    expect(result.stats.total_active).toBe(1);
+  });
+
+  it("returns degraded status with multiple issues", () => {
+    // Create 3 different issue types
+    const m1 = memoryAdd(db, { content: "exp mem", layer: "semantic", ttl_days: 1 });
+    db.prepare("UPDATE memories SET expires_at = datetime('now', '-1 day') WHERE id = ?").run(m1.id);
+
+    const m2 = memoryAdd(db, { content: "orphan mem", layer: "semantic" });
+    db.pragma("foreign_keys = OFF");
+    db.prepare("UPDATE memories SET supersedes = 'missing-999' WHERE id = ?").run(m2.id);
+    db.pragma("foreign_keys = ON");
+
+    memoryAdd(db, { content: "low conf", layer: "semantic", confidence: 0.1 });
+
+    const result = memoryHealth(db, {});
+    expect(result.status).toBe("degraded");
+    expect(result.issues.length).toBe(3);
   });
 });

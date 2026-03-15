@@ -54,6 +54,41 @@ try {
 
 const AUTH_TOKEN = process.env["MNEMON_AUTH_TOKEN"];
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
+const CORS_ORIGIN = process.env["MNEMON_CORS_ORIGIN"] ?? "*";
+
+// ---------------------------------------------------------------------------
+// Rate limiting — simple token bucket per IP
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT = parseInt(process.env["MNEMON_RATE_LIMIT"] ?? "100", 10); // requests per window
+const RATE_WINDOW_MS = 60_000; // 1 minute
+
+interface BucketEntry {
+  count: number;
+  resetAt: number;
+}
+
+const rateBuckets = new Map<string, BucketEntry>();
+
+function isRateLimited(ip: string): boolean {
+  if (RATE_LIMIT <= 0) return false; // disabled
+  const now = Date.now();
+  const entry = rateBuckets.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_LIMIT;
+}
+
+// Periodic cleanup of stale buckets (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateBuckets) {
+    if (now >= entry.resetAt) rateBuckets.delete(ip);
+  }
+}, 5 * 60_000).unref();
 
 function isAuthorized(req: IncomingMessage): boolean {
   if (!AUTH_TOKEN) return true;
@@ -72,7 +107,32 @@ function rejectUnauthorized(res: ServerResponse): void {
 // HTTP server — stateless mode: new transport + server per request
 // ---------------------------------------------------------------------------
 
+function setCorsHeaders(res: ServerResponse): void {
+  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
 async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  setCorsHeaders(res);
+
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Rate limiting
+  // Use socket IP directly — x-forwarded-for is trivially spoofable without a trusted proxy
+  const clientIp = req.socket.remoteAddress ?? "unknown";
+  if (isRateLimited(clientIp)) {
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Too many requests. Try again later." }));
+    return;
+  }
+
   if (!isAuthorized(req)) {
     rejectUnauthorized(res);
     return;

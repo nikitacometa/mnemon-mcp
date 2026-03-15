@@ -25,6 +25,7 @@ import { memoryUpdate } from "./tools/memory-update.js";
 import { memoryInspect } from "./tools/memory-inspect.js";
 import { memoryExport } from "./tools/memory-export.js";
 import { memoryDelete } from "./tools/memory-delete.js";
+import { memoryHealth } from "./tools/memory-health.js";
 
 import {
   MemoryAddSchema,
@@ -33,12 +34,14 @@ import {
   MemoryInspectSchema,
   MemoryExportSchema,
   MemoryDeleteSchema,
+  MemoryHealthSchema,
   memoryAddToolSchema,
   memorySearchToolSchema,
   memoryUpdateToolSchema,
   memoryInspectToolSchema,
   memoryExportToolSchema,
   memoryDeleteToolSchema,
+  memoryHealthToolSchema,
 } from "./validation.js";
 
 import type {
@@ -48,6 +51,7 @@ import type {
   MemoryInspectInput,
   MemoryExportInput,
   MemoryDeleteInput,
+  MemoryHealthInput,
 } from "./types.js";
 
 import type { Embedder } from "./embedder.js";
@@ -117,6 +121,12 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
         description:
           "Export memories to JSON, Markdown, or claude-md (compact LLM-optimized) format. Supports filtering by layer, scope, date range. Returns the exported content as a string.",
         inputSchema: memoryExportToolSchema,
+      },
+      {
+        name: "memory_health",
+        description:
+          "Diagnostic health report on the memory store. Returns expired entries, orphaned superseding chains, stale/never-accessed memories, low-confidence entries, and per-layer stats. Use cleanup=true to garbage-collect expired entries.",
+        inputSchema: memoryHealthToolSchema,
       },
     ],
   }));
@@ -190,6 +200,11 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
         case "memory_export": {
           const input = MemoryExportSchema.parse(args) as MemoryExportInput;
           const result = memoryExport(db, input);
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+        case "memory_health": {
+          const input = MemoryHealthSchema.parse(args ?? {}) as MemoryHealthInput;
+          const result = memoryHealth(db, input);
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         default:

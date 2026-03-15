@@ -62,6 +62,7 @@ Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index
 | `memory_delete` | Permanently delete a memory, re-activating its predecessor if any |
 | `memory_inspect` | Layer statistics or single-memory history trace |
 | `memory_export` | Export to JSON, Markdown, or claude-md with filters |
+| `memory_health` | Diagnostic report: expired entries, orphaned chains, stale memories, GC |
 
 ### memory_add
 
@@ -131,6 +132,14 @@ Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index
 | `scope` | string | No | Filter by scope |
 | `date_from` / `date_to` | string | No | Date range |
 | `limit` | number | No | Max entries (default all, max 10K) |
+
+### memory_health
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `cleanup` | boolean | No | `true` = garbage-collect expired entries (default `false`, report only) |
+
+Returns: status (`healthy`/`warning`/`degraded`), per-layer stats, expired entries, orphaned superseding chains, stale/low-confidence counts, and cleaned entry count when `cleanup=true`.
 
 ## Memory Model
 
@@ -229,7 +238,7 @@ MNEMON_AUTH_TOKEN=secret MNEMON_PORT=3000 npm run start:http
 - `POST /mcp` — MCP JSON-RPC endpoint (Bearer auth if token is set)
 - `GET /health` — returns `{"status":"ok","version":"..."}`
 
-Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM.
+Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM. CORS headers included. Rate limiting: 100 req/min per IP (configurable via `MNEMON_RATE_LIMIT`).
 
 ## Configuration
 
@@ -240,6 +249,8 @@ Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM
 | `MNEMON_AUTH_TOKEN` | — | Bearer token for HTTP transport |
 | `MNEMON_PORT` | `3000` | HTTP transport port |
 | `MNEMON_CONFIG_PATH` | `~/.mnemon-mcp/config.json` | Import config file path |
+| `MNEMON_CORS_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin` header |
+| `MNEMON_RATE_LIMIT` | `100` | Max requests per minute per IP (0 = disabled) |
 
 ## Development
 
