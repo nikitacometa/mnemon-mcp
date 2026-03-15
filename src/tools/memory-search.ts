@@ -194,12 +194,6 @@ export function memorySearch(
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
-    .filter((row) => {
-      if (!input.include_superseded && row.superseded_by !== null) return false;
-      if (input.min_confidence !== undefined && row.confidence < input.min_confidence) return false;
-      if (input.min_importance !== undefined && row.importance < input.min_importance) return false;
-      return true;
-    })
     .map((row) => {
       const bm25Score = scoreMap.get(row.id) ?? 0;
       const importanceBoost = 0.3 + 0.7 * row.importance;
@@ -292,6 +286,14 @@ function ftsSearch(
     conditions.push("(m.valid_until IS NULL OR datetime(m.valid_until) >= datetime(?))");
   }
 
+  if (input.min_confidence !== undefined) {
+    conditions.push("m.confidence >= ?");
+  }
+
+  if (input.min_importance !== undefined) {
+    conditions.push("m.importance >= ?");
+  }
+
   const whereClause =
     conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
 
@@ -320,9 +322,10 @@ function ftsSearch(
     filterParams.push(input.as_of);
     filterParams.push(input.as_of);
   }
+  if (input.min_confidence !== undefined) filterParams.push(input.min_confidence);
+  if (input.min_importance !== undefined) filterParams.push(input.min_importance);
 
-  const fetchLimit = limit * 2; // fetch extra to allow post-filter
-  const params: unknown[] = [ftsQuery, ...filterParams, fetchLimit];
+  const params: unknown[] = [ftsQuery, ...filterParams, limit];
 
   try {
     const rows = db.prepare<unknown[], FtsRow>(sql).all(...params);
@@ -332,7 +335,7 @@ function ftsSearch(
     // This fills the result set when AND is too restrictive (misses partial matches).
     if (results.length < limit && input.query.trim().split(/\s+/).length > 1) {
       const orQuery = buildFtsQuery(input.query, "OR");
-      const orParams = [orQuery, ...filterParams, fetchLimit];
+      const orParams = [orQuery, ...filterParams, limit];
       const orRows = db.prepare<unknown[], FtsRow>(sql).all(...orParams);
       const andIds = new Set(results.map((r) => r.id));
       const orOnly = orRows
@@ -397,6 +400,16 @@ function exactSearch(
     conditions.push("(valid_until IS NULL OR datetime(valid_until) >= datetime(?))");
     params.push(input.as_of);
     params.push(input.as_of);
+  }
+
+  if (input.min_confidence !== undefined) {
+    conditions.push("confidence >= ?");
+    params.push(input.min_confidence);
+  }
+
+  if (input.min_importance !== undefined) {
+    conditions.push("importance >= ?");
+    params.push(input.min_importance);
   }
 
   params.push(limit);

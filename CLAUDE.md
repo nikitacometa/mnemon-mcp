@@ -17,7 +17,7 @@ Task board shared with KB: `~/dev/mnemon/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
 npm run build      # compile TypeScript → dist/
 npm run dev        # run via tsx (no build needed)
 npm start          # run compiled dist/index.js (blocks on stdio — see Smoke Test)
-npm test           # vitest (74 tests: 14 md-parser + 60 integration)
+npm test           # vitest (125 tests: 17 md-parser + 13 kb-import + 95 integration)
 npm run import:kb  # import mnemon-kb markdown → SQLite (skip unchanged)
 ```
 
@@ -38,6 +38,8 @@ echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js
 | TypeScript | 5.9 | Strict mode, NodeNext modules |
 | better-sqlite3 | 12.6 | Synchronous SQLite (ideal for MCP stdio) |
 | @modelcontextprotocol/sdk | 1.27 | MCP server framework |
+| zod | 4.3 | Runtime input validation |
+| snowball-stemmer.jsx | 0.2.3 | Russian/English stemming |
 | vitest | 3.2 | Test runner |
 | tsx | 4.21 | TypeScript execution without build step |
 
@@ -91,6 +93,7 @@ src/
 | memory_add | Working | Insert with auto-supersede on source_file match |
 | memory_search | Working | FTS5 with layer/entity/date/scope filters |
 | memory_update | Working | In-place or superseding chain |
+| memory_delete | Working | Delete memory with chain cleanup |
 | memory_inspect | Working | Stats per layer or single memory history |
 | memory_export | Working | Export to json/markdown/claude-md with filters |
 | style_extract | Stub | Throws "not implemented" |
@@ -141,7 +144,7 @@ In `~/.claude/mcp.json`:
 
 ## Known Issues
 
-1. **Russian morphology partially addressed** — Snowball stemmer applied at index and query time. Inflected forms now match via stemmed FTS5 index. Edge cases with irregular forms may still miss.
+1. **Russian morphology** — Snowball stemmer fully integrated at index and query time. Inflected forms match via stemmed FTS5 index. Edge cases with irregular forms may still miss.
 2. **Import scope too narrow** — 21/50 golden set cases blocked (nutrition, habits, journal, finance, language, telegram not imported)
 3. **L2 retrieval = 36.9/100** — Recall@5=0.298, below 0.3 threshold. Achievable with current scope: 46.3/100
 4. **Integration tests added** — 60 integration tests covering all 6 tools + stemming + pagination + edge cases
@@ -172,4 +175,4 @@ When `memory_update(supersede=true)`:
 
 - **better-sqlite3 (sync)** over async alternatives — MCP stdio transport is inherently synchronous; async DB would add complexity with no benefit
 - **FTS5 over FTS3/4** — BM25 ranking, highlight(), snippet() support
-- **unicode61 tokenizer** — handles Cyrillic + Latin, but no morphological stemming (known limitation, see issue #1)
+- **unicode61 tokenizer** — handles Cyrillic + Latin. Snowball stemmer applied at index and query time for morphological matching

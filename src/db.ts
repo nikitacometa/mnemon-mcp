@@ -45,27 +45,31 @@ export function openDatabase(dbPath: string = DB_PATH): Database.Database {
  * Each migration is wrapped in a transaction and applied in order.
  */
 function runMigrations(db: Database.Database): void {
-  const currentVersion = db.pragma("user_version", { simple: true }) as number;
+  let currentVersion = db.pragma("user_version", { simple: true }) as number;
 
   if (currentVersion < 1) {
     applyMigration1(db);
     db.pragma("user_version = 1");
+    currentVersion = 1;
   }
 
   if (currentVersion < 2) {
     applyMigration2(db);
     db.pragma("user_version = 2");
+    currentVersion = 2;
   }
 
   if (currentVersion < 3) {
     applyMigration3(db);
     backfillStemmedContent(db);
     db.pragma("user_version = 3");
+    currentVersion = 3;
   }
 
   if (currentVersion < 4) {
     applyMigration4(db);
     db.pragma("user_version = 4");
+    currentVersion = 4;
   }
 }
 

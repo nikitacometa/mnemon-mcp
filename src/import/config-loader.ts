@@ -13,48 +13,48 @@
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import type { DirectoryMapping, FileMapping } from "./kb-config.js";
-import type { EntityType, Layer } from "../types.js";
 
-// ── JSON config schema ──
+// ── JSON config schema (Zod-validated) ──
 
-export interface ConfigJson {
-  /** Name of the KB owner — used as entity_name where mappings specify "$owner" */
-  owner_name?: string;
-  /** Additional stop words to filter from search queries (e.g. owner name forms) */
-  extra_stop_words?: string[];
-  /** Directory-to-layer mappings */
-  mappings: ConfigMapping[];
-  /** Files outside the KB root to import */
-  external_files?: ConfigExternalFile[];
-}
+const LayerEnum = z.enum(["episodic", "semantic", "procedural", "resource"]);
+const EntityTypeEnum = z.enum(["user", "project", "person", "concept", "file", "rule", "tool"]);
+const SplitEnum = z.enum(["whole", "h2", "h3"]);
 
-interface ConfigMapping {
-  glob: string;
-  layer: Layer;
-  entity_type: EntityType;
-  /** Literal name, "from-heading", or "$owner" (replaced with owner_name) */
-  entity_name?: string;
-  importance: number;
-  confidence: number;
-  split: "whole" | "h2" | "h3";
-  /** Regex pattern to filter filenames (replaces fileFilter function) */
-  file_pattern?: string;
-  scope?: string;
-}
+const ConfigMappingSchema = z.object({
+  glob: z.string().min(1),
+  layer: LayerEnum,
+  entity_type: EntityTypeEnum,
+  entity_name: z.string().optional(),
+  importance: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  split: SplitEnum,
+  file_pattern: z.string().optional(),
+  scope: z.string().optional(),
+});
 
-interface ConfigExternalFile {
-  path: string;
-  mapping: {
-    layer: Layer;
-    entity_type: EntityType;
-    entity_name?: string;
-    importance: number;
-    confidence: number;
-    split: "whole" | "h2" | "h3";
-    scope?: string;
-  };
-}
+const ConfigExternalFileSchema = z.object({
+  path: z.string().min(1),
+  mapping: z.object({
+    layer: LayerEnum,
+    entity_type: EntityTypeEnum,
+    entity_name: z.string().optional(),
+    importance: z.number().min(0).max(1),
+    confidence: z.number().min(0).max(1),
+    split: SplitEnum,
+    scope: z.string().optional(),
+  }),
+});
+
+const ConfigJsonSchema = z.object({
+  owner_name: z.string().optional(),
+  extra_stop_words: z.array(z.string()).optional(),
+  mappings: z.array(ConfigMappingSchema),
+  external_files: z.array(ConfigExternalFileSchema).optional(),
+});
+
+type ConfigJson = z.infer<typeof ConfigJsonSchema>;
 
 // ── Default config path ──
 
@@ -103,9 +103,10 @@ export function loadConfig(configPath?: string): LoadedConfig {
 
   let json: ConfigJson;
   try {
-    json = JSON.parse(raw) as ConfigJson;
+    const parsed: unknown = JSON.parse(raw);
+    json = ConfigJsonSchema.parse(parsed);
   } catch (err) {
-    throw new Error(`Invalid JSON in config: ${resolvedPath}: ${err}`);
+    throw new Error(`Invalid config at ${resolvedPath}: ${err}`);
   }
 
   return parseConfig(json);

@@ -6,7 +6,7 @@
  * All tokens stored lowercase — caller must .toLowerCase() before lookup.
  */
 
-export const RUSSIAN_STOP_WORDS = new Set([
+const RUSSIAN_STOP_WORDS = new Set([
   // Pronouns
   "я", "ты", "он", "она", "оно", "мы", "вы", "они",
   "мне", "тебе", "ему", "ей", "нам", "вам", "им",
@@ -67,7 +67,7 @@ export const RUSSIAN_STOP_WORDS = new Set([
   "время", "времени", "временем",
 ]);
 
-export const ENGLISH_STOP_WORDS = new Set([
+const ENGLISH_STOP_WORDS = new Set([
   // Articles
   "a", "an", "the",
   // Auxiliary verbs

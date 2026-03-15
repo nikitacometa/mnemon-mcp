@@ -55,7 +55,7 @@ export function stemWord(word: string): string {
  * Stem all words in a string. Returns array of stemmed tokens.
  * Preserves order, removes empty results.
  */
-export function stemTokens(tokens: string[]): string[] {
+function stemTokens(tokens: string[]): string[] {
   return tokens.map(stemWord).filter((t) => t.length > 0);
 }
 

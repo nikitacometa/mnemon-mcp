@@ -1088,4 +1088,54 @@ describe("entity aliases", () => {
   it("alias cannot equal canonical (CHECK constraint)", () => {
     expect(() => insertAlias("nikita", "nikita")).toThrow();
   });
+
+  it("resolves alias when searching by entity_name filter", () => {
+    memoryAdd(db, { content: "Nikita uses Neovim for coding", layer: "semantic", entity_name: "nikita" });
+    insertAlias("nikita", "коля");
+
+    // Search using the alias — entity_name filter should resolve to canonical
+    const result = memorySearch(db, { query: "Neovim coding", entity_name: "коля" });
+    expect(result.memories.length).toBe(1);
+    expect(result.memories[0]!.entity_name).toBe("nikita");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// memory_search — additional pagination correctness
+// ---------------------------------------------------------------------------
+
+describe("memory_search — pagination correctness", () => {
+  it("offset=2 limit=2 returns different items from offset=0 limit=2", () => {
+    for (let i = 1; i <= 5; i++) {
+      memoryAdd(db, {
+        content: `pagcorrect item content ${i}`,
+        layer: "semantic",
+        importance: i * 0.15,
+      });
+    }
+
+    const firstPage = memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 0 });
+    const secondPage = memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 2 });
+
+    expect(firstPage.memories.length).toBe(2);
+    expect(secondPage.memories.length).toBe(2);
+
+    const firstIds = new Set(firstPage.memories.map((m) => m.id));
+    for (const m of secondPage.memories) {
+      expect(firstIds.has(m.id)).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validation edge cases
+// ---------------------------------------------------------------------------
+
+describe("validation edge cases", () => {
+  it("search with query of only escapeable special characters throws an error", () => {
+    // All chars stripped by escapeFtsToken → no valid FTS tokens remain → throws
+    expect(() => memorySearch(db, { query: "*** ??? !!!" })).toThrow(
+      /at least one non-empty term|Invalid search query/
+    );
+  });
 });

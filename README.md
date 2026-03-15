@@ -15,7 +15,7 @@ Works with any [MCP](https://modelcontextprotocol.io)-compatible client: Claude 
 - **Index-time stemming** — Snowball stemmer for English and Russian, applied at both index and query time for precise morphological matching
 - **Fact versioning** — superseding chains track how knowledge evolves; search returns only the latest version
 - **Knowledge base import** — bulk-import Markdown files with configurable layer routing, splitting, and deduplication
-- **MCP Resources & Prompts** — browse memory stats, layers, entities via Resources; pre-built prompt templates for recall, context loading, journaling
+- **MCP Resources & Prompts** — 2 static resources (stats, recent), 2 resource templates (layer, entity); pre-built prompts for recall, context loading, journaling
 - **Two transports** — stdio for local agents, HTTP with Bearer auth for remote setups
 - **Zero external dependencies** — no vector DB, no embedding model, no cloud API. One SQLite file
 
@@ -140,7 +140,7 @@ Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM
 ```bash
 npm run dev        # run via tsx (no build step)
 npm run build      # TypeScript → dist/
-npm test           # 123 tests (vitest)
+npm test           # vitest
 npm run bench      # performance benchmarks
 npm run db:backup  # backup database
 ```
