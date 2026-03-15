@@ -44,6 +44,9 @@ import type {
   MemoryDeleteInput,
 } from "./types.js";
 
+import type { Embedder } from "./embedder.js";
+import { upsertVec, deleteVec, isVecLoaded } from "./vector.js";
+
 import { loadConfig } from "./import/config-loader.js";
 import { addExtraStopWords } from "./stop-words.js";
 
@@ -65,7 +68,7 @@ export function loadExtraStopWords(): void {
 }
 
 /** Create an MCP server with all memory tools registered. */
-export function createMcpServer(db: Database.Database): Server {
+export function createMcpServer(db: Database.Database, embedder?: Embedder | null): Server {
   const server = new Server(
     { name: "mnemon-mcp", version },
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
@@ -112,7 +115,7 @@ export function createMcpServer(db: Database.Database): Server {
     ],
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
     try {
@@ -120,21 +123,57 @@ export function createMcpServer(db: Database.Database): Server {
         case "memory_add": {
           const input = MemoryAddSchema.parse(args) as MemoryAddInput;
           const result = memoryAdd(db, input);
+          // Auto-embed if embedder configured and sqlite-vec loaded
+          if (embedder && isVecLoaded()) {
+            try {
+              const textToEmbed = input.title
+                ? `${input.title}\n\n${input.content}`
+                : input.content;
+              const embedding = await embedder.embed(textToEmbed);
+              upsertVec(db, result.id, embedding);
+            } catch {
+              // Embedding is best-effort — don't fail the add
+            }
+          }
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         case "memory_search": {
           const input = MemorySearchSchema.parse(args) as MemorySearchInput;
-          const result = memorySearch(db, input);
+          const result = await memorySearch(db, input, embedder);
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         case "memory_update": {
           const input = MemoryUpdateSchema.parse(args) as MemoryUpdateInput;
           const result = memoryUpdate(db, input);
+          // Re-embed updated or new (superseded) memory
+          if (embedder && isVecLoaded()) {
+            try {
+              const activeId = result.new_id ?? result.updated_id;
+              const row = db.prepare<[string], { title: string | null; content: string }>(
+                "SELECT title, content FROM memories WHERE id = ?"
+              ).get(activeId);
+              if (row) {
+                const text = row.title ? `${row.title}\n\n${row.content}` : row.content;
+                const embedding = await embedder.embed(text);
+                upsertVec(db, activeId, embedding);
+              }
+              // Remove stale vector for superseded entry
+              if (result.new_id) {
+                deleteVec(db, result.updated_id);
+              }
+            } catch {
+              // Best-effort
+            }
+          }
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         case "memory_delete": {
           const input = MemoryDeleteSchema.parse(args) as MemoryDeleteInput;
           const result = memoryDelete(db, input);
+          // Remove vector for deleted memory
+          if (isVecLoaded()) {
+            deleteVec(db, input.id);
+          }
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         case "memory_inspect": {

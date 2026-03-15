@@ -130,7 +130,7 @@ describe("MemorySearchSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it.each(["fts", "exact"] as const)("accepts valid mode: %s", (mode) => {
+  it.each(["fts", "exact", "vector", "hybrid"] as const)("accepts valid mode: %s", (mode) => {
     const result = MemorySearchSchema.parse({ query: "test", mode });
     expect(result.mode).toBe(mode);
   });

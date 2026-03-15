@@ -17,7 +17,8 @@ Works with any [MCP](https://modelcontextprotocol.io)-compatible client: Claude 
 - **Knowledge base import** — bulk-import Markdown files with configurable layer routing, splitting, and deduplication
 - **MCP Resources & Prompts** — 2 static resources (stats, recent), 2 resource templates (layer, entity); pre-built prompts for recall, context loading, journaling
 - **Two transports** — stdio for local agents, HTTP with Bearer auth for remote setups
-- **Zero external dependencies** — no vector DB, no embedding model, no cloud API. One SQLite file
+- **Optional vector search** — BYOK embeddings (OpenAI, Ollama) with sqlite-vec for hybrid FTS5+vector search via RRF
+- **Zero required dependencies** — works with just SQLite, no cloud API needed. Vector search is opt-in
 
 ## Quick Start
 
@@ -149,6 +150,33 @@ Two modes, both with layer/entity/scope/date/confidence filters:
 **FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements automatically. Scores are boosted by importance and recency: `bm25 × (0.3 + 0.7 × importance) × decay(layer)`. Episodic memories decay with a 30-day half-life, resource with 90 days; semantic and procedural don't decay.
 
 **Exact mode** — `LIKE` substring match for precise lookups. Useful when you need an exact phrase rather than tokenized matching.
+
+## Vector Search (Optional)
+
+Enable semantic similarity search by providing your own embedding API key:
+
+```bash
+# OpenAI embeddings
+MNEMON_EMBEDDING_PROVIDER=openai MNEMON_EMBEDDING_API_KEY=sk-... node dist/index.js
+
+# Ollama (local, free)
+MNEMON_EMBEDDING_PROVIDER=ollama node dist/index.js
+```
+
+With an embedding provider configured, two new search modes become available:
+
+- **`mode: "vector"`** — pure embedding similarity search (cosine distance)
+- **`mode: "hybrid"`** — combines FTS5 keyword search with vector similarity using [Reciprocal Rank Fusion](https://www.singlestore.com/blog/hybrid-search-using-reciprocal-rank-fusion-in-sql/)
+
+Requires `sqlite-vec` (installed automatically as optional dependency). New memories are embedded on add; existing memories can be backfilled.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MNEMON_EMBEDDING_PROVIDER` | — | `openai` or `ollama` (unset = disabled) |
+| `MNEMON_EMBEDDING_API_KEY` | — | API key (required for OpenAI) |
+| `MNEMON_EMBEDDING_MODEL` | `text-embedding-3-small` / `nomic-embed-text` | Embedding model |
+| `MNEMON_EMBEDDING_DIMENSIONS` | `1024` / `768` | Vector dimensions |
+| `MNEMON_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
 
 ## Fact Versioning
 

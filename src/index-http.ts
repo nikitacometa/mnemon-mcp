@@ -17,6 +17,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 
 import { openDatabase } from "./db.js";
 import { createMcpServer, loadExtraStopWords, version } from "./server.js";
+import { createEmbedder } from "./embedder.js";
+import { loadSqliteVec, createVecTable } from "./vector.js";
 
 // ---------------------------------------------------------------------------
 // Database + config
@@ -32,6 +34,19 @@ try {
 }
 
 loadExtraStopWords();
+
+// Optional: load sqlite-vec extension and create vector table
+const vecAvailable = loadSqliteVec(db);
+
+let embedder: ReturnType<typeof createEmbedder> = null;
+try {
+  embedder = createEmbedder();
+  if (embedder && vecAvailable) {
+    createVecTable(db, embedder.dimensions);
+  }
+} catch {
+  // Embedder creation is best-effort
+}
 
 // ---------------------------------------------------------------------------
 // Auth — timing-safe comparison to prevent token extraction via timing attack
@@ -104,7 +119,7 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
   req.on("data", onData);
 
   const transport = new StreamableHTTPServerTransport({});
-  const server = createMcpServer(db);
+  const server = createMcpServer(db, embedder);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await server.connect(transport as any);
 

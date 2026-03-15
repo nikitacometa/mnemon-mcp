@@ -20,7 +20,7 @@ export type MemorySource =
   | "api"
   | `import:${"claude-md" | "kb" | "chatgpt-export" | string}`;
 
-export type SearchMode = "fts" | "exact";
+export type SearchMode = "fts" | "exact" | "vector" | "hybrid";
 
 
 // ---------------------------------------------------------------------------

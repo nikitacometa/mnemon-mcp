@@ -57,6 +57,9 @@
     "snowball-stemmer.jsx": "^0.2.3",
     "zod": "^4.3.6"
   },
+  "optionalDependencies": {
+    "sqlite-vec": "^0.1.6"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "tsx": "^4.21.0",

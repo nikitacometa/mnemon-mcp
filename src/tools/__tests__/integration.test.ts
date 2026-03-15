@@ -101,78 +101,78 @@ describe("memory_search", () => {
     memoryAdd(db, { content: "Book summary: Thinking Fast and Slow by Kahneman", layer: "resource", title: "Book" });
   }
 
-  it("finds memory by keyword", () => {
+  it("finds memory by keyword", async () => {
     seedMemories();
-    const result = memorySearch(db, { query: "TypeScript" });
+    const result = await memorySearch(db, { query: "TypeScript" });
     expect(result.memories.length).toBeGreaterThan(0);
     expect(result.memories[0]!.content).toContain("TypeScript");
   });
 
-  it("finds Cyrillic content", () => {
+  it("finds Cyrillic content", async () => {
     seedMemories();
-    const result = memorySearch(db, { query: "Алексеем" });
+    const result = await memorySearch(db, { query: "Алексеем" });
     expect(result.memories.length).toBeGreaterThan(0);
     expect(result.memories[0]!.content).toContain("Алексеем");
   });
 
-  it("filters by layer", () => {
+  it("filters by layer", async () => {
     seedMemories();
-    const result = memorySearch(db, { query: "TypeScript", layers: ["procedural"] });
+    const result = await memorySearch(db, { query: "TypeScript", layers: ["procedural"] });
     // TypeScript is in semantic, not procedural
     expect(result.memories.length).toBe(0);
   });
 
-  it("excludes superseded entries by default", () => {
+  it("excludes superseded entries by default", async () => {
     memoryAdd(db, { content: "old version of facts", layer: "semantic", source_file: "doc.md" });
     memoryAdd(db, { content: "new version of facts", layer: "semantic", source_file: "doc.md" });
 
-    const result = memorySearch(db, { query: "version facts" });
+    const result = await memorySearch(db, { query: "version facts" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("new version");
   });
 
-  it("includes superseded when requested", () => {
+  it("includes superseded when requested", async () => {
     memoryAdd(db, { content: "old version of facts", layer: "semantic", source_file: "doc.md" });
     memoryAdd(db, { content: "new version of facts", layer: "semantic", source_file: "doc.md" });
 
-    const result = memorySearch(db, { query: "version facts", include_superseded: true });
+    const result = await memorySearch(db, { query: "version facts", include_superseded: true });
     expect(result.memories.length).toBe(2);
   });
 
-  it("excludes expired memories", () => {
+  it("excludes expired memories", async () => {
     const result = memoryAdd(db, { content: "expired content here", layer: "episodic", ttl_days: 1 });
     // Manually set expires_at to the past
     db.prepare("UPDATE memories SET expires_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(result.id);
 
-    const search = memorySearch(db, { query: "expired content" });
+    const search = await memorySearch(db, { query: "expired content" });
     expect(search.memories.length).toBe(0);
   });
 
-  it("falls back to OR when AND returns nothing", () => {
+  it("falls back to OR when AND returns nothing", async () => {
     memoryAdd(db, { content: "SQLite database engine is fast", layer: "semantic" });
     // Query with words that won't all appear together
-    const result = memorySearch(db, { query: "SQLite PostgreSQL comparison" });
+    const result = await memorySearch(db, { query: "SQLite PostgreSQL comparison" });
     // OR fallback should find SQLite match
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("exact mode finds substring matches", () => {
+  it("exact mode finds substring matches", async () => {
     memoryAdd(db, { content: "the quick brown fox jumps over lazy dog", layer: "semantic" });
-    const result = memorySearch(db, { query: "brown fox", mode: "exact" });
+    const result = await memorySearch(db, { query: "brown fox", mode: "exact" });
     expect(result.memories.length).toBe(1);
   });
 
-  it("updates access_count on search", () => {
+  it("updates access_count on search", async () => {
     const added = memoryAdd(db, { content: "access tracking test", layer: "semantic" });
-    memorySearch(db, { query: "access tracking" });
+    await memorySearch(db, { query: "access tracking" });
 
     const row = db.prepare("SELECT access_count FROM memories WHERE id = ?").get(added.id) as { access_count: number };
     expect(row.access_count).toBe(1);
   });
 
-  it("returns query_time_ms", () => {
+  it("returns query_time_ms", async () => {
     seedMemories();
-    const result = memorySearch(db, { query: "TypeScript" });
+    const result = await memorySearch(db, { query: "TypeScript" });
     expect(result.query_time_ms).toBeGreaterThanOrEqual(0);
   });
 });
@@ -335,11 +335,11 @@ describe("memory_delete", () => {
     expect(after.superseded_by).toBeNull();
   });
 
-  it("removes deleted entry from FTS index", () => {
+  it("removes deleted entry from FTS index", async () => {
     const added = memoryAdd(db, { content: "unique_fts_deletion_test_token", layer: "semantic" });
     memoryDelete(db, { id: added.id });
 
-    const search = memorySearch(db, { query: "unique_fts_deletion_test_token" });
+    const search = await memorySearch(db, { query: "unique_fts_deletion_test_token" });
     expect(search.memories.length).toBe(0);
   });
 
@@ -351,7 +351,7 @@ describe("memory_delete", () => {
     expect(events.some(e => e.event_type === "deleted")).toBe(true);
   });
 
-  it("correctly re-links chain when deleting middle element A→B→C", () => {
+  it("correctly re-links chain when deleting middle element A→B→C", async () => {
     // Create chain: v1 → v2 → v3
     const v1 = memoryAdd(db, { content: "chain v1", layer: "semantic", source_file: "chain-mid.md" });
     const v2 = memoryAdd(db, { content: "chain v2", layer: "semantic", source_file: "chain-mid.md" });
@@ -369,7 +369,7 @@ describe("memory_delete", () => {
     expect(v3Row.supersedes).toBe(v1.id);
 
     // Only v3 should be active (v1 still superseded)
-    const search = memorySearch(db, { query: "chain", mode: "exact" });
+    const search = await memorySearch(db, { query: "chain", mode: "exact" });
     expect(search.memories.length).toBe(1);
     expect(search.memories[0]!.id).toBe(v3.id);
   });
@@ -447,15 +447,15 @@ describe("memory_export", () => {
 // ---------------------------------------------------------------------------
 
 describe("memory_search — pagination", () => {
-  it("supports offset for pagination", () => {
+  it("supports offset for pagination", async () => {
     // Use distinct importance values for deterministic ordering in exact mode
     for (let i = 1; i <= 5; i++) {
       memoryAdd(db, { content: `pagination test item ${i}`, layer: "semantic", importance: i * 0.15 });
     }
 
-    const all = memorySearch(db, { query: "pagination test", mode: "exact", limit: 5 });
-    const page1 = memorySearch(db, { query: "pagination test", mode: "exact", limit: 2 });
-    const page2 = memorySearch(db, { query: "pagination test", mode: "exact", limit: 2, offset: 2 });
+    const all = await memorySearch(db, { query: "pagination test", mode: "exact", limit: 5 });
+    const page1 = await memorySearch(db, { query: "pagination test", mode: "exact", limit: 2 });
+    const page2 = await memorySearch(db, { query: "pagination test", mode: "exact", limit: 2, offset: 2 });
 
     expect(all.memories.length).toBe(5);
     expect(page1.memories.length).toBe(2);
@@ -468,13 +468,13 @@ describe("memory_search — pagination", () => {
     expect(page2.memories[1]!.id).toBe(all.memories[3]!.id);
   });
 
-  it("offset larger than limit returns correct slice", () => {
+  it("offset larger than limit returns correct slice", async () => {
     for (let i = 0; i < 25; i++) {
       memoryAdd(db, { content: `deep pagination item ${i}`, layer: "semantic", importance: (25 - i) * 0.04 });
     }
 
-    const all = memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 25 });
-    const page = memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 3, offset: 20 });
+    const all = await memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 25 });
+    const page = await memorySearch(db, { query: "deep pagination item", mode: "exact", limit: 3, offset: 20 });
 
     expect(all.memories.length).toBe(25);
     expect(page.memories.length).toBe(3);
@@ -483,22 +483,22 @@ describe("memory_search — pagination", () => {
     expect(page.memories[2]!.id).toBe(all.memories[22]!.id);
   });
 
-  it("offset=0 behaves same as no offset", () => {
+  it("offset=0 behaves same as no offset", async () => {
     for (let i = 0; i < 5; i++) {
       memoryAdd(db, { content: `offset zero test ${i}`, layer: "semantic" });
     }
 
-    const noOffset = memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3 });
-    const offset0 = memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3, offset: 0 });
+    const noOffset = await memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3 });
+    const offset0 = await memorySearch(db, { query: "offset zero test", mode: "exact", limit: 3, offset: 0 });
 
     expect(noOffset.memories.length).toBe(offset0.memories.length);
     expect(noOffset.memories.map(m => m.id)).toEqual(offset0.memories.map(m => m.id));
   });
 
-  it("offset beyond total returns empty", () => {
+  it("offset beyond total returns empty", async () => {
     memoryAdd(db, { content: "beyond total test item", layer: "semantic" });
 
-    const result = memorySearch(db, { query: "beyond total test", mode: "exact", limit: 5, offset: 100 });
+    const result = await memorySearch(db, { query: "beyond total test", mode: "exact", limit: 5, offset: 100 });
     expect(result.memories).toHaveLength(0);
   });
 });
@@ -542,20 +542,20 @@ describe("memory_update — supersede protection", () => {
 // ---------------------------------------------------------------------------
 
 describe("memory_search — exact mode LIKE escape", () => {
-  it("does not treat % as wildcard in exact mode", () => {
+  it("does not treat % as wildcard in exact mode", async () => {
     memoryAdd(db, { content: "100% correct answer", layer: "semantic" });
     memoryAdd(db, { content: "totally wrong answer", layer: "semantic" });
 
-    const result = memorySearch(db, { query: "100%", mode: "exact" });
+    const result = await memorySearch(db, { query: "100%", mode: "exact" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("100%");
   });
 
-  it("does not treat _ as single-char wildcard in exact mode", () => {
+  it("does not treat _ as single-char wildcard in exact mode", async () => {
     memoryAdd(db, { content: "file_name.ts is important", layer: "semantic" });
     memoryAdd(db, { content: "filename is different", layer: "semantic" });
 
-    const result = memorySearch(db, { query: "file_name", mode: "exact" });
+    const result = await memorySearch(db, { query: "file_name", mode: "exact" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("file_name");
   });
@@ -566,61 +566,61 @@ describe("memory_search — exact mode LIKE escape", () => {
 // ---------------------------------------------------------------------------
 
 describe("stop word filtering", () => {
-  it("strips Russian navigational words from query", () => {
+  it("strips Russian navigational words from query", async () => {
     memoryAdd(db, { content: "Серии привычек хранятся в трекере", layer: "semantic" });
     // "Где хранятся серии привычек" — "Где" is a stop word, should be stripped
-    const result = memorySearch(db, { query: "Где хранятся серии привычек" });
+    const result = await memorySearch(db, { query: "Где хранятся серии привычек" });
     expect(result.memories.length).toBeGreaterThan(0);
     expect(result.memories[0]!.content).toContain("привычек");
   });
 
-  it("strips Russian question words: какой, сколько, что", () => {
+  it("strips Russian question words: какой, сколько, что", async () => {
     memoryAdd(db, { content: "Дневная норма калорий составляет 2200 ккал", layer: "semantic" });
     // "Какая дневная норма калорий" — "Какая" is a stop word
-    const result = memorySearch(db, { query: "Какая дневная норма калорий" });
+    const result = await memorySearch(db, { query: "Какая дневная норма калорий" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("strips English stop words from queries", () => {
+  it("strips English stop words from queries", async () => {
     memoryAdd(db, { content: "Human Design profile type is Generator 5/1", layer: "semantic" });
     // "What is the Human Design profile" — What/is/the are stop words
-    const result = memorySearch(db, { query: "What is the Human Design profile" });
+    const result = await memorySearch(db, { query: "What is the Human Design profile" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("handles mixed Russian/English queries with stop words", () => {
+  it("handles mixed Russian/English queries with stop words", async () => {
     memoryAdd(db, { content: "Практика випассана с 2024 года", layer: "semantic" });
     // "Что это за практика випассана" — "Что", "это", "за" are stop words
-    const result = memorySearch(db, { query: "Что это за практика випассана" });
+    const result = await memorySearch(db, { query: "Что это за практика випассана" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("falls back to original tokens when all are stop words", () => {
+  it("falls back to original tokens when all are stop words", async () => {
     memoryAdd(db, { content: "это был он а не она", layer: "episodic" });
     // All stop words — should fall back to using them
-    const result = memorySearch(db, { query: "это был он" });
+    const result = await memorySearch(db, { query: "это был он" });
     // May or may not find (depends on FTS indexing of these short words)
     // Key: should NOT throw
     expect(result.query_time_ms).toBeGreaterThanOrEqual(0);
   });
 
-  it("handles prepositions in context: 'про медитацию'", () => {
+  it("handles prepositions in context: 'про медитацию'", async () => {
     memoryAdd(db, { content: "Книга про медитацию и осознанность", layer: "resource" });
     // "про" is a stop word, "медитацию" has semantic value
-    const result = memorySearch(db, { query: "про медитацию" });
+    const result = await memorySearch(db, { query: "про медитацию" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("stemmer matches morphological variants: субличность/субличностях", () => {
+  it("stemmer matches morphological variants: субличность/субличностях", async () => {
     memoryAdd(db, { content: "Работа с субличностями через IFS терапию", layer: "semantic" });
     // Query uses different word form — stemmer should reduce both to "субличн"
-    const result = memorySearch(db, { query: "субличность" });
+    const result = await memorySearch(db, { query: "субличность" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 
-  it("stemmer matches English variants: meditation/meditating", () => {
+  it("stemmer matches English variants: meditation/meditating", async () => {
     memoryAdd(db, { content: "Daily meditation practice improves focus", layer: "semantic" });
-    const result = memorySearch(db, { query: "meditating daily" });
+    const result = await memorySearch(db, { query: "meditating daily" });
     expect(result.memories.length).toBeGreaterThan(0);
   });
 });
@@ -630,33 +630,33 @@ describe("stop word filtering", () => {
 // ---------------------------------------------------------------------------
 
 describe("edge cases", () => {
-  it("handles FTS5 special characters in search query", () => {
+  it("handles FTS5 special characters in search query", async () => {
     memoryAdd(db, { content: "function() { return true; }", layer: "procedural" });
     // Should not throw — special chars are escaped
-    const result = memorySearch(db, { query: "function() return" });
+    const result = await memorySearch(db, { query: "function() return" });
     expect(result.memories.length).toBeGreaterThanOrEqual(0);
   });
 
-  it("handles empty search results gracefully", () => {
-    const result = memorySearch(db, { query: "nonexistent_term_xyz" });
+  it("handles empty search results gracefully", async () => {
+    const result = await memorySearch(db, { query: "nonexistent_term_xyz" });
     expect(result.memories).toEqual([]);
     expect(result.total_found).toBe(0);
   });
 
-  it("handles min_confidence filter", () => {
+  it("handles min_confidence filter", async () => {
     memoryAdd(db, { content: "low confidence fact", layer: "semantic", confidence: 0.3 });
     memoryAdd(db, { content: "high confidence fact", layer: "semantic", confidence: 0.9 });
 
-    const result = memorySearch(db, { query: "confidence fact", min_confidence: 0.5 });
+    const result = await memorySearch(db, { query: "confidence fact", min_confidence: 0.5 });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("high");
   });
 
-  it("handles date range filtering", () => {
+  it("handles date range filtering", async () => {
     memoryAdd(db, { content: "January event", layer: "episodic", event_at: "2026-01-15T10:00:00Z" });
     memoryAdd(db, { content: "March event", layer: "episodic", event_at: "2026-03-15T10:00:00Z" });
 
-    const result = memorySearch(db, { query: "event", date_from: "2026-03-01", date_to: "2026-03-31" });
+    const result = await memorySearch(db, { query: "event", date_from: "2026-03-01", date_to: "2026-03-31" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("March");
   });
@@ -759,34 +759,34 @@ describe("MCP server capabilities", () => {
 // ---------------------------------------------------------------------------
 
 describe("decay scoring", () => {
-  it("older episodic memory scores lower than newer one", () => {
+  it("older episodic memory scores lower than newer one", async () => {
     const old = memoryAdd(db, { content: "session notes about project alpha", layer: "episodic" });
     db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(old.id);
     const recent = memoryAdd(db, { content: "session notes about project alpha", layer: "episodic" });
-    const result = memorySearch(db, { query: "session notes project alpha" });
+    const result = await memorySearch(db, { query: "session notes project alpha" });
     expect(result.memories.length).toBe(2);
     // Recent should rank higher due to decay
     expect(result.memories[0]!.id).toBe(recent.id);
     expect(result.memories[0]!.score).toBeGreaterThan(result.memories[1]!.score);
   });
 
-  it("old semantic memory retains full score (no decay)", () => {
+  it("old semantic memory retains full score (no decay)", async () => {
     const fact = memoryAdd(db, { content: "blood type is A positive", layer: "semantic", importance: 0.9 });
     db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(fact.id);
-    const result = memorySearch(db, { query: "blood type" });
+    const result = await memorySearch(db, { query: "blood type" });
     expect(result.memories.length).toBeGreaterThan(0);
     expect(result.memories.some(m => m.id === fact.id)).toBe(true);
   });
 
-  it("old procedural memory retains full score (no decay)", () => {
+  it("old procedural memory retains full score (no decay)", async () => {
     const rule = memoryAdd(db, { content: "always run tests before deployment", layer: "procedural" });
     db.prepare("UPDATE memories SET created_at = '2020-01-01T00:00:00Z' WHERE id = ?").run(rule.id);
-    const result = memorySearch(db, { query: "tests before deployment" });
+    const result = await memorySearch(db, { query: "tests before deployment" });
     expect(result.memories.length).toBeGreaterThan(0);
     expect(result.memories[0]!.id).toBe(rule.id);
   });
 
-  it("recently accessed episodic memory decays slower", () => {
+  it("recently accessed episodic memory decays slower", async () => {
     const m1 = memoryAdd(db, { content: "old session about database tuning", layer: "episodic" });
     const m2 = memoryAdd(db, { content: "old session about database tuning", layer: "episodic" });
     // Both created long ago
@@ -795,7 +795,7 @@ describe("decay scoring", () => {
     // But m2 was accessed recently
     db.prepare("UPDATE memories SET last_accessed = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(m2.id);
 
-    const result = memorySearch(db, { query: "database tuning session" });
+    const result = await memorySearch(db, { query: "database tuning session" });
     expect(result.memories.length).toBe(2);
     // m2 (recently accessed) should score higher
     expect(result.memories[0]!.id).toBe(m2.id);
@@ -807,10 +807,10 @@ describe("decay scoring", () => {
 // ---------------------------------------------------------------------------
 
 describe("importance weight range", () => {
-  it("importance 1.0 gives 3.33x boost over importance 0.0", () => {
+  it("importance 1.0 gives 3.33x boost over importance 0.0", async () => {
     const low = memoryAdd(db, { content: "importance range test item low", layer: "semantic", importance: 0.0 });
     const high = memoryAdd(db, { content: "importance range test item high", layer: "semantic", importance: 1.0 });
-    const result = memorySearch(db, { query: "importance range test item" });
+    const result = await memorySearch(db, { query: "importance range test item" });
     const highScore = result.memories.find(m => m.id === high.id)!.score;
     const lowScore = result.memories.find(m => m.id === low.id)!.score;
     // ratio should be 1.0/0.3 = 3.33
@@ -950,7 +950,7 @@ describe("temporal fact windows", () => {
     expect(row.valid_until).toBeNull();
   });
 
-  it("as_of filter excludes memories not yet valid", () => {
+  it("as_of filter excludes memories not yet valid", async () => {
     memoryAdd(db, {
       content: "future CEO is Bob",
       layer: "semantic",
@@ -963,12 +963,12 @@ describe("temporal fact windows", () => {
       entity_name: "company",
     });
 
-    const result = memorySearch(db, { query: "CEO", as_of: "2026-06-01" });
+    const result = await memorySearch(db, { query: "CEO", as_of: "2026-06-01" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("Alice");
   });
 
-  it("as_of filter excludes memories that expired before the date", () => {
+  it("as_of filter excludes memories that expired before the date", async () => {
     memoryAdd(db, {
       content: "old CEO was Charlie",
       layer: "semantic",
@@ -981,12 +981,12 @@ describe("temporal fact windows", () => {
       entity_name: "company",
     });
 
-    const result = memorySearch(db, { query: "CEO", as_of: "2025-06-01" });
+    const result = await memorySearch(db, { query: "CEO", as_of: "2025-06-01" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.content).toContain("Alice");
   });
 
-  it("as_of filter returns memory within valid window", () => {
+  it("as_of filter returns memory within valid window", async () => {
     memoryAdd(db, {
       content: "Q1 target is 100K",
       layer: "semantic",
@@ -994,14 +994,14 @@ describe("temporal fact windows", () => {
       valid_until: "2026-03-31",
     });
 
-    const inside = memorySearch(db, { query: "target", as_of: "2026-02-15" });
+    const inside = await memorySearch(db, { query: "target", as_of: "2026-02-15" });
     expect(inside.memories.length).toBe(1);
 
-    const outside = memorySearch(db, { query: "target", as_of: "2026-05-01" });
+    const outside = await memorySearch(db, { query: "target", as_of: "2026-05-01" });
     expect(outside.memories.length).toBe(0);
   });
 
-  it("as_of works with exact search mode", () => {
+  it("as_of works with exact search mode", async () => {
     memoryAdd(db, {
       content: "seasonal discount 20%",
       layer: "semantic",
@@ -1009,16 +1009,16 @@ describe("temporal fact windows", () => {
       valid_until: "2026-08-31",
     });
 
-    const inside = memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-07-15" });
+    const inside = await memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-07-15" });
     expect(inside.memories.length).toBe(1);
 
-    const outside = memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-01-01" });
+    const outside = await memorySearch(db, { query: "seasonal discount", mode: "exact", as_of: "2026-01-01" });
     expect(outside.memories.length).toBe(0);
   });
 
-  it("memories with null valid_from/valid_until always match as_of", () => {
+  it("memories with null valid_from/valid_until always match as_of", async () => {
     memoryAdd(db, { content: "eternal fact xyz", layer: "semantic" });
-    const result = memorySearch(db, { query: "eternal fact xyz", as_of: "2000-01-01" });
+    const result = await memorySearch(db, { query: "eternal fact xyz", as_of: "2000-01-01" });
     expect(result.memories.length).toBe(1);
   });
 
@@ -1047,36 +1047,36 @@ describe("entity aliases", () => {
     db.prepare("INSERT INTO entity_aliases (canonical, alias) VALUES (?, ?)").run(canonical, alias);
   }
 
-  it("FTS search resolves alias to canonical entity_name", () => {
+  it("FTS search resolves alias to canonical entity_name", async () => {
     memoryAdd(db, { content: "Nikita prefers dark mode", layer: "semantic", entity_name: "nikita" });
     insertAlias("nikita", "ник");
 
-    const result = memorySearch(db, { query: "dark mode", entity_name: "ник" });
+    const result = await memorySearch(db, { query: "dark mode", entity_name: "ник" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.entity_name).toBe("nikita");
   });
 
-  it("exact search resolves alias to canonical entity_name", () => {
+  it("exact search resolves alias to canonical entity_name", async () => {
     memoryAdd(db, { content: "Nikita lives in Bangkok", layer: "semantic", entity_name: "nikita" });
     insertAlias("nikita", "никита");
 
-    const result = memorySearch(db, { query: "Bangkok", mode: "exact", entity_name: "никита" });
+    const result = await memorySearch(db, { query: "Bangkok", mode: "exact", entity_name: "никита" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.entity_name).toBe("nikita");
   });
 
-  it("search with canonical name still works", () => {
+  it("search with canonical name still works", async () => {
     memoryAdd(db, { content: "canonical name test", layer: "semantic", entity_name: "alice" });
     insertAlias("alice", "алиса");
 
-    const result = memorySearch(db, { query: "canonical name test", entity_name: "alice" });
+    const result = await memorySearch(db, { query: "canonical name test", entity_name: "alice" });
     expect(result.memories.length).toBe(1);
   });
 
-  it("unknown alias passes through unchanged", () => {
+  it("unknown alias passes through unchanged", async () => {
     memoryAdd(db, { content: "unknown alias test content", layer: "semantic", entity_name: "bob" });
 
-    const result = memorySearch(db, { query: "unknown alias test", entity_name: "bob" });
+    const result = await memorySearch(db, { query: "unknown alias test", entity_name: "bob" });
     expect(result.memories.length).toBe(1);
   });
 
@@ -1089,12 +1089,12 @@ describe("entity aliases", () => {
     expect(() => insertAlias("nikita", "nikita")).toThrow();
   });
 
-  it("resolves alias when searching by entity_name filter", () => {
+  it("resolves alias when searching by entity_name filter", async () => {
     memoryAdd(db, { content: "Nikita uses Neovim for coding", layer: "semantic", entity_name: "nikita" });
     insertAlias("nikita", "коля");
 
     // Search using the alias — entity_name filter should resolve to canonical
-    const result = memorySearch(db, { query: "Neovim coding", entity_name: "коля" });
+    const result = await memorySearch(db, { query: "Neovim coding", entity_name: "коля" });
     expect(result.memories.length).toBe(1);
     expect(result.memories[0]!.entity_name).toBe("nikita");
   });
@@ -1105,7 +1105,7 @@ describe("entity aliases", () => {
 // ---------------------------------------------------------------------------
 
 describe("memory_search — pagination correctness", () => {
-  it("offset=2 limit=2 returns different items from offset=0 limit=2", () => {
+  it("offset=2 limit=2 returns different items from offset=0 limit=2", async () => {
     for (let i = 1; i <= 5; i++) {
       memoryAdd(db, {
         content: `pagcorrect item content ${i}`,
@@ -1114,8 +1114,8 @@ describe("memory_search — pagination correctness", () => {
       });
     }
 
-    const firstPage = memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 0 });
-    const secondPage = memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 2 });
+    const firstPage = await memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 0 });
+    const secondPage = await memorySearch(db, { query: "pagcorrect item content", mode: "exact", limit: 2, offset: 2 });
 
     expect(firstPage.memories.length).toBe(2);
     expect(secondPage.memories.length).toBe(2);
@@ -1132,10 +1132,52 @@ describe("memory_search — pagination correctness", () => {
 // ---------------------------------------------------------------------------
 
 describe("validation edge cases", () => {
-  it("search with query of only escapeable special characters throws an error", () => {
+  it("search with query of only escapeable special characters throws an error", async () => {
     // All chars stripped by escapeFtsToken → no valid FTS tokens remain → throws
-    expect(() => memorySearch(db, { query: "*** ??? !!!" })).toThrow(
+    await expect(memorySearch(db, { query: "*** ??? !!!" })).rejects.toThrow(
       /at least one non-empty term|Invalid search query/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vector / hybrid search modes — error handling without embedder
+// ---------------------------------------------------------------------------
+
+describe("vector search — graceful degradation", () => {
+  it("vector mode throws without embedder", async () => {
+    await expect(
+      memorySearch(db, { query: "test query", mode: "vector" })
+    ).rejects.toThrow(/embedding provider/i);
+  });
+
+  it("hybrid mode throws without embedder", async () => {
+    await expect(
+      memorySearch(db, { query: "test query", mode: "hybrid" })
+    ).rejects.toThrow(/embedding provider/i);
+  });
+
+  it("vector mode throws with embedder but no sqlite-vec", async () => {
+    const mockEmbedder = {
+      embed: async () => new Float32Array(1024),
+      embedBatch: async (texts: string[]) => texts.map(() => new Float32Array(1024)),
+      dimensions: 1024,
+      provider: "mock",
+    };
+    await expect(
+      memorySearch(db, { query: "test query", mode: "vector" }, mockEmbedder)
+    ).rejects.toThrow(/sqlite-vec/i);
+  });
+
+  it("fts mode still works without embedder", async () => {
+    memoryAdd(db, { content: "vector test content", layer: "semantic" });
+    const result = await memorySearch(db, { query: "vector test content" });
+    expect(result.memories.length).toBe(1);
+  });
+
+  it("exact mode still works without embedder", async () => {
+    memoryAdd(db, { content: "exact vector test", layer: "semantic" });
+    const result = await memorySearch(db, { query: "exact vector test", mode: "exact" });
+    expect(result.memories.length).toBe(1);
   });
 });

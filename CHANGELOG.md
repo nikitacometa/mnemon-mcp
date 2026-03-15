@@ -2,6 +2,17 @@
 
 All notable changes to mnemon-mcp will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Optional vector search with BYOK embeddings (OpenAI, Ollama)
+- sqlite-vec integration for cosine similarity KNN search
+- Hybrid search mode combining FTS5 + vector via Reciprocal Rank Fusion (RRF)
+- `mode: "vector"` and `mode: "hybrid"` options in memory_search
+- Auto-embed on memory_add when embedding provider is configured
+- Embedder abstraction with OpenAI and Ollama providers
+- New env vars: MNEMON_EMBEDDING_PROVIDER, MNEMON_EMBEDDING_API_KEY, MNEMON_EMBEDDING_MODEL, MNEMON_EMBEDDING_DIMENSIONS, MNEMON_OLLAMA_URL
+
 ## [1.0.0] - 2026-03-15
 
 ### Added

@@ -18,8 +18,10 @@ import type {
   MemorySearchOutput,
   MemorySearchResult,
 } from "../types.js";
+import type { Embedder } from "../embedder.js";
 import { isStopWord } from "../stop-words.js";
 import { stemWord } from "../stemmer.js";
+import { knnSearch, isVecLoaded } from "../vector.js";
 
 const DEFAULT_LIMIT = 10;
 const SNIPPET_TOKENS = 64;
@@ -152,10 +154,11 @@ interface MemoryBaseRow {
   superseded_by: string | null;
 }
 
-export function memorySearch(
+export async function memorySearch(
   db: Database.Database,
-  input: MemorySearchInput
-): MemorySearchOutput {
+  input: MemorySearchInput,
+  embedder?: Embedder | null
+): Promise<MemorySearchOutput> {
   const startMs = Date.now();
   const limit = input.limit ?? DEFAULT_LIMIT;
   const offset = input.offset ?? 0;
@@ -163,7 +166,23 @@ export function memorySearch(
 
   let ids: Array<{ id: string; score: number }>;
 
-  if (mode === "exact") {
+  if (mode === "vector") {
+    if (!embedder) {
+      throw new Error("Vector search requires an embedding provider. Set MNEMON_EMBEDDING_PROVIDER env var.");
+    }
+    if (!isVecLoaded()) {
+      throw new Error("Vector search requires sqlite-vec. Install: npm install sqlite-vec");
+    }
+    ids = await vectorSearch(db, input, embedder, limit + offset);
+  } else if (mode === "hybrid") {
+    if (!embedder) {
+      throw new Error("Hybrid search requires an embedding provider. Set MNEMON_EMBEDDING_PROVIDER env var.");
+    }
+    if (!isVecLoaded()) {
+      throw new Error("Hybrid search requires sqlite-vec. Install: npm install sqlite-vec");
+    }
+    ids = await hybridSearch(db, input, embedder, limit + offset);
+  } else if (mode === "exact") {
     ids = exactSearch(db, input, limit + offset);
   } else {
     ids = ftsSearch(db, input, limit + offset);
@@ -426,6 +445,126 @@ function exactSearch(
   return rows.map((r) => ({ id: r.id, score: 1.0 }));
 }
 
+/**
+ * Build SQL filter conditions from search input (shared by vector and hybrid).
+ * Returns [conditions[], params[]] to add to a WHERE clause.
+ */
+function buildMemoryFilters(
+  db: Database.Database,
+  input: MemorySearchInput
+): { conditions: string[]; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (!input.include_superseded) {
+    conditions.push("superseded_by IS NULL");
+  }
+  conditions.push("(expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))");
+
+  if (input.layers && input.layers.length > 0) {
+    conditions.push(`layer IN (${input.layers.map(() => "?").join(", ")})`);
+    params.push(...input.layers);
+  }
+  if (input.entity_name) {
+    const resolved = resolveEntityName(db, input.entity_name);
+    conditions.push("entity_name = ?");
+    params.push(resolved);
+  }
+  if (input.scope) {
+    conditions.push("scope = ?");
+    params.push(input.scope);
+  }
+  if (input.date_from) {
+    conditions.push("COALESCE(event_at, created_at) >= ?");
+    params.push(input.date_from);
+  }
+  if (input.date_to) {
+    conditions.push("COALESCE(event_at, created_at) <= ?");
+    params.push(input.date_to);
+  }
+  if (input.as_of) {
+    conditions.push("(valid_from IS NULL OR datetime(valid_from) <= datetime(?))");
+    conditions.push("(valid_until IS NULL OR datetime(valid_until) >= datetime(?))");
+    params.push(input.as_of, input.as_of);
+  }
+  if (input.min_confidence !== undefined) {
+    conditions.push("confidence >= ?");
+    params.push(input.min_confidence);
+  }
+  if (input.min_importance !== undefined) {
+    conditions.push("importance >= ?");
+    params.push(input.min_importance);
+  }
+
+  return { conditions, params };
+}
+
+async function vectorSearch(
+  db: Database.Database,
+  input: MemorySearchInput,
+  embedder: Embedder,
+  limit: number
+): Promise<Array<{ id: string; score: number }>> {
+  const queryVec = await embedder.embed(input.query);
+  // Over-fetch to account for filter losses
+  const knnLimit = Math.min(limit * 3, 200);
+  const results = knnSearch(db, queryVec, knnLimit, !input.include_superseded);
+
+  if (results.length === 0) return [];
+
+  // Apply the same filters as FTS/exact search
+  const { conditions, params } = buildMemoryFilters(db, input);
+
+  const knnIds = results.map((r) => r.memory_id);
+  const idPlaceholders = knnIds.map(() => "?").join(", ");
+  const allConditions = [`id IN (${idPlaceholders})`, ...conditions];
+
+  const filtered = db
+    .prepare<unknown[], { id: string }>(
+      `SELECT id FROM memories WHERE ${allConditions.join(" AND ")}`
+    )
+    .all(...knnIds, ...params);
+
+  const filteredSet = new Set(filtered.map((r) => r.id));
+
+  return results
+    .filter((r) => filteredSet.has(r.memory_id))
+    .map((r) => ({ id: r.memory_id, score: Math.max(0, 1 - r.distance) }))
+    .slice(0, limit);
+}
+
+async function hybridSearch(
+  db: Database.Database,
+  input: MemorySearchInput,
+  embedder: Embedder,
+  limit: number
+): Promise<Array<{ id: string; score: number }>> {
+  // Run FTS and vector search in parallel
+  const [ftsResults, vecResults] = await Promise.all([
+    Promise.resolve(ftsSearch(db, input, limit)),
+    vectorSearch(db, input, embedder, limit),
+  ]);
+
+  // Reciprocal Rank Fusion (k=60)
+  const RRF_K = 60;
+  const scores = new Map<string, number>();
+
+  ftsResults.forEach((r, i) => {
+    const rank = i + 1;
+    scores.set(r.id, (scores.get(r.id) ?? 0) + 1.0 / (RRF_K + rank));
+  });
+
+  vecResults.forEach((r, i) => {
+    const rank = i + 1;
+    scores.set(r.id, (scores.get(r.id) ?? 0) + 1.0 / (RRF_K + rank));
+  });
+
+  return Array.from(scores.entries())
+    .map(([id, score]) => ({ id, score }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 /** JSON Schema for MCP tool registration */
 export const memorySearchSchema = {
   type: "object",
@@ -489,8 +628,8 @@ export const memorySearchSchema = {
     },
     mode: {
       type: "string",
-      enum: ["fts", "exact"],
-      description: "Search mode: fts=FTS5 tokenized (default), exact=LIKE substring",
+      enum: ["fts", "exact", "vector", "hybrid"],
+      description: "Search mode: fts=FTS5 tokenized (default), exact=LIKE substring, vector=embedding similarity (requires MNEMON_EMBEDDING_PROVIDER), hybrid=FTS5+vector with RRF fusion",
     },
   },
   required: ["query"],

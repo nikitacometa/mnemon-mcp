@@ -7,7 +7,7 @@ import { z } from "zod";
 
 const Layer = z.enum(["episodic", "semantic", "procedural", "resource"]);
 const EntityType = z.enum(["user", "project", "person", "concept", "file", "rule", "tool"]);
-const SearchMode = z.enum(["fts", "exact"]);
+const SearchMode = z.enum(["fts", "exact", "vector", "hybrid"]);
 const ExportFormat = z.enum(["json", "markdown", "claude-md"]);
 
 const isoDatePrefix = z.string().regex(

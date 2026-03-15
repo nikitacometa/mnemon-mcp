@@ -8,6 +8,8 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { openDatabase } from "./db.js";
 import { createMcpServer, loadExtraStopWords } from "./server.js";
+import { createEmbedder } from "./embedder.js";
+import { loadSqliteVec, createVecTable } from "./vector.js";
 
 let db: ReturnType<typeof openDatabase>;
 
@@ -20,7 +22,21 @@ try {
 
 loadExtraStopWords();
 
-const server = createMcpServer(db);
+// Optional: load sqlite-vec extension and create vector table
+const vecAvailable = loadSqliteVec(db);
+
+// Optional: create embedder from env vars
+let embedder: ReturnType<typeof createEmbedder> = null;
+try {
+  embedder = createEmbedder();
+  if (embedder && vecAvailable) {
+    createVecTable(db, embedder.dimensions);
+  }
+} catch {
+  // Embedder creation is best-effort
+}
+
+const server = createMcpServer(db, embedder);
 
 // Graceful shutdown: close DB and checkpoint WAL
 function shutdown(): void {
