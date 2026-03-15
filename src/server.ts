@@ -19,12 +19,12 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { memoryAdd, memoryAddSchema } from "./tools/memory-add.js";
-import { memorySearch, memorySearchSchema } from "./tools/memory-search.js";
-import { memoryUpdate, memoryUpdateSchema } from "./tools/memory-update.js";
-import { memoryInspect, memoryInspectSchema } from "./tools/memory-inspect.js";
-import { memoryExport, memoryExportSchema } from "./tools/memory-export.js";
-import { memoryDelete, memoryDeleteSchema } from "./tools/memory-delete.js";
+import { memoryAdd } from "./tools/memory-add.js";
+import { memorySearch } from "./tools/memory-search.js";
+import { memoryUpdate } from "./tools/memory-update.js";
+import { memoryInspect } from "./tools/memory-inspect.js";
+import { memoryExport } from "./tools/memory-export.js";
+import { memoryDelete } from "./tools/memory-delete.js";
 
 import {
   MemoryAddSchema,
@@ -33,6 +33,12 @@ import {
   MemoryInspectSchema,
   MemoryExportSchema,
   MemoryDeleteSchema,
+  memoryAddToolSchema,
+  memorySearchToolSchema,
+  memoryUpdateToolSchema,
+  memoryInspectToolSchema,
+  memoryExportToolSchema,
+  memoryDeleteToolSchema,
 } from "./validation.js";
 
 import type {
@@ -80,37 +86,37 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
         name: "memory_add",
         description:
           "Add a new memory to the persistent store. Supports 4 cognitive layers: episodic (events/sessions), semantic (facts/concepts), procedural (rules/workflows), resource (reference material). Automatically supersedes previous entries from the same source_file.",
-        inputSchema: memoryAddSchema,
+        inputSchema: memoryAddToolSchema,
       },
       {
         name: "memory_search",
         description:
           "Full-text search across all memory layers using FTS5. Supports layer/entity/date/scope filtering. Returns scored results with snippets. Superseded entries excluded by default.",
-        inputSchema: memorySearchSchema,
+        inputSchema: memorySearchToolSchema,
       },
       {
         name: "memory_update",
         description:
           "Update an existing memory. Use supersede=true to create a versioned replacement (preserves history chain). Use supersede=false (default) to update fields in place.",
-        inputSchema: memoryUpdateSchema,
+        inputSchema: memoryUpdateToolSchema,
       },
       {
         name: "memory_delete",
         description:
           "Permanently delete a memory by ID. Cleans up superseding chain references: re-activates predecessor if one exists.",
-        inputSchema: memoryDeleteSchema,
+        inputSchema: memoryDeleteToolSchema,
       },
       {
         name: "memory_inspect",
         description:
           "Inspect memory details or layer statistics. Without id: returns aggregate stats per layer (total, active, superseded, avg_confidence, top_entities). With id: returns the full memory row and optionally its history chain.",
-        inputSchema: memoryInspectSchema,
+        inputSchema: memoryInspectToolSchema,
       },
       {
         name: "memory_export",
         description:
           "Export memories to JSON, Markdown, or claude-md (compact LLM-optimized) format. Supports filtering by layer, scope, date range. Returns the exported content as a string.",
-        inputSchema: memoryExportSchema,
+        inputSchema: memoryExportToolSchema,
       },
     ],
   }));

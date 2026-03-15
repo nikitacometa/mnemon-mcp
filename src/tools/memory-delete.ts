@@ -70,14 +70,3 @@ export function memoryDelete(
   return { deleted_id: input.id };
 }
 
-/** JSON Schema for MCP tool registration */
-export const memoryDeleteSchema = {
-  type: "object",
-  properties: {
-    id: {
-      type: "string",
-      description: "ID of the memory to permanently delete",
-    },
-  },
-  required: ["id"],
-} as const;

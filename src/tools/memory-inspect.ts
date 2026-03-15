@@ -209,29 +209,3 @@ function inspectLayerStats(
   return { layer_stats };
 }
 
-/** JSON Schema for MCP tool registration */
-export const memoryInspectSchema = {
-  type: "object",
-  properties: {
-    id: {
-      type: "string",
-      description:
-        "Memory ID to inspect. When provided, returns the full memory row and optionally its history chain.",
-    },
-    layer: {
-      type: "string",
-      enum: ["episodic", "semantic", "procedural", "resource"],
-      description: "Filter layer stats by this layer (used when id is omitted)",
-    },
-    entity_name: {
-      type: "string",
-      description: "Filter stats by entity name (used when id is omitted)",
-    },
-    include_history: {
-      type: "boolean",
-      description:
-        "When true and id is provided, include the full superseded chain (ancestor entries)",
-    },
-  },
-  required: [],
-} as const;
