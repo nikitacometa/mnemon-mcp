@@ -22,7 +22,15 @@ import { createMcpServer, loadExtraStopWords, version } from "./server.js";
 // Database + config
 // ---------------------------------------------------------------------------
 
-const db = openDatabase();
+let db: ReturnType<typeof openDatabase>;
+
+try {
+  db = openDatabase();
+} catch (err) {
+  console.error(`[mnemon-mcp http] Failed to open database: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
+
 loadExtraStopWords();
 
 // ---------------------------------------------------------------------------
@@ -78,20 +86,22 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
     return;
   }
 
-  // Enforce body size limit on actual stream (handles chunked transfer encoding)
-  req.socket.setMaxListeners(req.socket.getMaxListeners() + 1);
+  // Enforce body size limit on actual stream (handles chunked transfer encoding).
+  // The data listener runs concurrently with transport.handleRequest — if the body
+  // exceeds the limit, req.destroy() aborts the stream and the transport will fail.
   let receivedBytes = 0;
-  let aborted = false;
-  req.on("data", (chunk: Buffer) => {
+  const onData = (chunk: Buffer): void => {
     receivedBytes += chunk.length;
-    if (receivedBytes > MAX_BODY_BYTES && !aborted) {
-      aborted = true;
-      res.writeHead(413, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` }));
+    if (receivedBytes > MAX_BODY_BYTES) {
+      req.removeListener("data", onData);
+      if (!res.headersSent) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` }));
+      }
       req.destroy();
     }
-  });
-  if (aborted) return;
+  };
+  req.on("data", onData);
 
   const transport = new StreamableHTTPServerTransport({});
   const server = createMcpServer(db);
@@ -101,6 +111,7 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
   try {
     await transport.handleRequest(req, res);
   } finally {
+    req.removeListener("data", onData);
     await server.close();
   }
 }

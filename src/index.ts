@@ -9,7 +9,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { openDatabase } from "./db.js";
 import { createMcpServer, loadExtraStopWords } from "./server.js";
 
-const db = openDatabase();
+let db: ReturnType<typeof openDatabase>;
+
+try {
+  db = openDatabase();
+} catch (err) {
+  process.stderr.write(`Failed to open database: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+}
+
 loadExtraStopWords();
 
 const server = createMcpServer(db);

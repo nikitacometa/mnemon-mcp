@@ -21,6 +21,14 @@ Works with any [MCP](https://modelcontextprotocol.io)-compatible client: Claude 
 
 ## Quick Start
 
+**Option A — npm (recommended):**
+
+```bash
+npm install -g mnemon-mcp
+```
+
+**Option B — from source:**
+
 ```bash
 git clone https://github.com/nikitacometa/mnemon-mcp.git
 cd mnemon-mcp && npm install && npm run build
@@ -53,6 +61,75 @@ Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index
 | `memory_delete` | Permanently delete a memory, re-activating its predecessor if any |
 | `memory_inspect` | Layer statistics or single-memory history trace |
 | `memory_export` | Export to JSON, Markdown, or claude-md with filters |
+
+### memory_add
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `content` | string | Yes | Memory text (max 100K chars) |
+| `layer` | string | Yes | `episodic` / `semantic` / `procedural` / `resource` |
+| `title` | string | No | Short title (max 500 chars) |
+| `entity_type` | string | No | `user` / `project` / `person` / `concept` / `file` / `rule` / `tool` |
+| `entity_name` | string | No | Entity name for filtering |
+| `confidence` | number | No | 0.0–1.0 (default 0.8) |
+| `importance` | number | No | 0.0–1.0 (default 0.5) |
+| `scope` | string | No | Namespace (default `global`) |
+| `source_file` | string | No | Source file path — triggers auto-supersede of matching entries |
+| `ttl_days` | number | No | Auto-expire after N days |
+| `valid_from` / `valid_until` | string | No | Temporal fact window (ISO 8601) |
+
+### memory_search
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Search text (tokenized for FTS5) |
+| `mode` | string | No | `fts` (default) or `exact` (LIKE substring) |
+| `layers` | string[] | No | Filter by layers |
+| `entity_name` | string | No | Filter by entity (supports aliases) |
+| `scope` | string | No | Filter by scope |
+| `date_from` / `date_to` | string | No | Date range filter (ISO 8601) |
+| `as_of` | string | No | Temporal fact filter — only facts valid at this date |
+| `min_confidence` | number | No | Minimum confidence threshold |
+| `min_importance` | number | No | Minimum importance threshold |
+| `limit` | number | No | Max results (default 10, max 100) |
+| `offset` | number | No | Pagination offset |
+
+### memory_update
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Memory ID to update |
+| `content` | string | No | New content |
+| `title` | string | No | New title |
+| `confidence` | number | No | New confidence |
+| `importance` | number | No | New importance |
+| `supersede` | boolean | No | `true` = create versioned replacement; `false` (default) = in-place update |
+| `new_content` | string | No | Content for superseding entry (when `supersede=true`) |
+
+### memory_delete
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Memory ID to delete. Re-activates predecessor if any |
+
+### memory_inspect
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | No | Specific memory ID. Without it — returns layer stats |
+| `layer` | string | No | Filter stats by layer |
+| `entity_name` | string | No | Filter stats by entity |
+| `include_history` | boolean | No | Include superseding chain |
+
+### memory_export
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `format` | string | Yes | `json` / `markdown` / `claude-md` |
+| `layers` | string[] | No | Filter by layers |
+| `scope` | string | No | Filter by scope |
+| `date_from` / `date_to` | string | No | Date range |
+| `limit` | number | No | Max entries (default all, max 10K) |
 
 ## Memory Model
 
@@ -134,6 +211,7 @@ Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM
 | `MNEMON_KB_PATH` | `.` | Knowledge base path for import |
 | `MNEMON_AUTH_TOKEN` | — | Bearer token for HTTP transport |
 | `MNEMON_PORT` | `3000` | HTTP transport port |
+| `MNEMON_CONFIG_PATH` | `~/.mnemon-mcp/config.json` | Import config file path |
 
 ## Development
 

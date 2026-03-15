@@ -227,9 +227,13 @@ export function createMcpServer(db: Database.Database): Server {
       };
     }
 
+    const VALID_LAYERS = ["episodic", "semantic", "procedural", "resource"];
     const layerMatch = uri.match(/^memory:\/\/layer\/(\w+)$/);
     if (layerMatch) {
       const layer = layerMatch[1]!;
+      if (!VALID_LAYERS.includes(layer)) {
+        throw new Error(`Invalid layer: "${layer}". Must be one of: ${VALID_LAYERS.join(", ")}`);
+      }
       const rows = db.prepare<[string], { id: string; title: string | null; content: string; entity_name: string | null; importance: number; created_at: string }>(
         `SELECT id, title, content, entity_name, importance, created_at FROM memories
          WHERE layer = ? AND superseded_by IS NULL

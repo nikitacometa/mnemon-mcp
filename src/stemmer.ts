@@ -52,14 +52,6 @@ export function stemWord(word: string): string {
 }
 
 /**
- * Stem all words in a string. Returns array of stemmed tokens.
- * Preserves order, removes empty results.
- */
-function stemTokens(tokens: string[]): string[] {
-  return tokens.map(stemWord).filter((t) => t.length > 0);
-}
-
-/**
  * Stem all words in a full text string for FTS5 index-time stemming.
  *
  * Splits on whitespace and punctuation boundaries, stems each token,
