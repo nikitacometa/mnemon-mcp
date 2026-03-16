@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-03-16
+last_updated: 2026-03-17
 description: mnemon-mcp — persistent layered memory MCP server for AI agents
 ---
 
@@ -17,7 +17,7 @@ Task board shared with KB: `~/dev/mnemon/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
 npm run build      # compile TypeScript → dist/
 npm run dev        # run via tsx (no build needed)
 npm start          # run compiled dist/index.js (blocks on stdio — see Smoke Test)
-npm test           # vitest (182 tests: 17 md-parser + 13 kb-import + 111 integration + 41 validation)
+npm test           # vitest (194 tests: 17 md-parser + 13 kb-import + 123 integration + 41 validation)
 npm run import:kb  # import mnemon-kb markdown → SQLite (skip unchanged)
 ```
 
@@ -53,10 +53,12 @@ src/
   types.ts              TypeScript types (mirrors SQLite schema)
   tools/
     memory-add.ts       Insert memory, auto-supersede on source_file match
-    memory-search.ts    FTS5 search with layer/scope/date filtering
+    memory-search.ts    FTS5 search with layer/scope/date filtering, recency boost, query-centered snippets
     memory-update.ts    In-place update or superseding chain
     memory-inspect.ts   Layer stats or single-memory history trace
     memory-export.ts    Export to json/markdown/claude-md with layer/scope/date filters
+    memory-health.ts    Diagnostic report + optional expired entry cleanup
+    session.ts          Session lifecycle: start, end, list
     style-extract.ts    [STUB] Writing style analysis
   import/
     cli.ts              CLI entry for KB import
@@ -71,7 +73,7 @@ src/
 
 - **Path:** `~/.mnemon-mcp/memory.db`
 - **WAL mode**, foreign keys ON, busy_timeout 5000ms
-- **Tables:** memories, sessions, import_log, event_log
+- **Tables:** memories, sessions, import_log, event_log, search_log, entity_aliases
 - **FTS5:** `memories_fts` synced via INSERT/UPDATE/DELETE triggers
 - **Partial indexes:** exclude superseded entries from search
 - **Tokenizer:** unicode61 (Cyrillic + Latin, NOT Thai-friendly)
@@ -90,12 +92,16 @@ src/
 
 | Tool | Status | Description |
 |------|--------|-------------|
-| memory_add | Working | Insert with auto-supersede on source_file match |
-| memory_search | Working | FTS5 with layer/entity/date/scope filters |
+| memory_add | Working | Insert with auto-supersede on source_file match, contradiction detection |
+| memory_search | Working | FTS5 with layer/entity/date/scope/as_of filters, recency boost, query-centered snippets |
 | memory_update | Working | In-place or superseding chain |
 | memory_delete | Working | Delete memory with chain cleanup |
 | memory_inspect | Working | Stats per layer or single memory history |
 | memory_export | Working | Export to json/markdown/claude-md with filters |
+| memory_health | Working | Diagnostic report: expired, orphaned, stale, low-confidence. Optional cleanup |
+| memory_session_start | Working | Start agent session, returns session ID for grouping memories |
+| memory_session_end | Working | End session with optional summary, returns duration + memory count |
+| memory_session_list | Working | List sessions with filters (client, project, active_only) |
 | style_extract | Stub | Throws "not implemented" |
 
 ### MCP Resources
@@ -147,7 +153,7 @@ In `~/.claude/mcp.json`:
 1. **Russian morphology** — Snowball stemmer fully integrated at index and query time. Inflected forms match via stemmed FTS5 index. Edge cases with irregular forms may still miss.
 2. **Import scope expanded but incomplete** — 9/50 golden set cases still failing (mostly temporal queries needing date-aware search)
 3. **L2 retrieval = 70.5/100** — Recall@5=0.780, MRR=0.537, nDCG@5=0.599. Up from 36.9 baseline
-4. **182 tests** — 17 md-parser + 13 kb-import + 111 integration + 41 validation
+4. **194 tests** — 17 md-parser + 13 kb-import + 123 integration + 41 validation
 5. **hybrid mode = alias for fts** — no real semantic/vector search, just falls through to FTS5
 6. **No cycle protection** in superseding chains
 
