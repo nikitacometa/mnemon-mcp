@@ -730,7 +730,8 @@ describe("index-time stemming", () => {
     const row = db.prepare("SELECT stemmed_content FROM memories WHERE id = ?")
       .get(added.id) as { stemmed_content: string };
 
-    expect(row.stemmed_content).toContain("обновлён");
+    // ё is normalized to е by stemmer, so "обновлённое" → "обновлен"
+    expect(row.stemmed_content).toContain("обновлен");
   });
 
   it("populates stemmed content on superseding entry", () => {

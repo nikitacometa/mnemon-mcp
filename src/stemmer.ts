@@ -39,7 +39,8 @@ function isCyrillic(word: string): boolean {
  * If the stem is empty or longer than the original, returns the original lowercase.
  */
 export function stemWord(word: string): string {
-  const lower = word.toLowerCase();
+  // Normalize ё→е before stemming — FTS5 unicode61 doesn't treat ё as diacritic of е
+  const lower = word.toLowerCase().replace(/ё/g, "е");
   const stemmer = isCyrillic(lower) ? ruStemmer : enStemmer;
   const stemmed = stemmer.stemWord(lower);
 

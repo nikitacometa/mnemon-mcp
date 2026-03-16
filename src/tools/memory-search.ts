@@ -38,7 +38,11 @@ function resolveEntityName(db: Database.Database, name: string): string {
 function escapeFtsToken(token: string): string {
   // Remove FTS5 query syntax chars + general punctuation from natural language queries
   // Note: hyphens (-) NOT stripped — unicode61 tokenizer uses them as separators
-  return token.replace(/["^*():?!.,;—–\/]/g, "").replace(/\b(AND|OR|NOT|NEAR)\b/gi, "");
+  return token
+    .replace(/["'^*():?!.,;—–\/]/g, "")
+    .replace(/ё/g, "е")
+    .replace(/Ё/g, "Е")
+    .replace(/\b(AND|OR|NOT|NEAR)\b/gi, "");
 }
 
 /**
@@ -93,9 +97,12 @@ function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
   return ftsTokens.join(` ${operator} `);
 }
 
-/** Normalize BM25 score (negative rank) to 0–1 */
+/** Normalize BM25 score (negative rank) to 0–1, preserving relevance order.
+ * BM25 returns negative values where more negative = more relevant.
+ * |rank|/(1+|rank|) maps to (0,1) and keeps the correct ordering. */
 function normalizeBm25(rank: number): number {
-  return 1 / (1 + Math.abs(rank));
+  const abs = Math.abs(rank);
+  return abs / (1 + abs);
 }
 
 /**
@@ -405,14 +412,14 @@ function ftsSearch(
   try {
     let results = runQuery(ftsQuery);
 
-    // Progressive AND relaxation: when full AND with 4+ tokens returns too few results,
-    // try AND with just the 3 longest (most specific) stems before falling back to OR.
+    // Progressive AND relaxation: when full AND with 3+ tokens returns too few results,
+    // try AND with just the 2 longest (most specific) stems before falling back to OR.
     if (results.length < limit) {
       const contentTokens = ftsQuery.split(/ AND /);
-      if (contentTokens.length >= 4) {
+      if (contentTokens.length >= 3) {
         // Sort by stem length descending (longer stems = more specific)
-        const top3 = [...contentTokens].sort((a, b) => b.length - a.length).slice(0, 3);
-        const relaxedQuery = top3.join(" AND ");
+        const top2 = [...contentTokens].sort((a, b) => b.length - a.length).slice(0, 2);
+        const relaxedQuery = top2.join(" AND ");
         const relaxedResults = runQuery(relaxedQuery, 0.9);
         const existingIds = new Set(results.map((r) => r.id));
         const newOnly = relaxedResults.filter((r) => !existingIds.has(r.id));
