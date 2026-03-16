@@ -8,6 +8,8 @@
 **Persistent layered memory for AI agents.**
 Local-first. Zero-cloud. Single SQLite file.
 
+[Landing Page](https://aisatisfy.me/mnemon/) · [npm](https://www.npmjs.com/package/mnemon-mcp) · [GitHub](https://github.com/nikitacometa/mnemon-mcp)
+
 Your AI agent forgets everything after each session. Mnemon fixes that.
 
 It gives any [MCP](https://modelcontextprotocol.io)-compatible client — [OpenClaw](https://openclaw.ai), Claude Code, Cursor, Windsurf, or your own — a structured long-term memory backed by a single SQLite database on your machine. No API keys, no cloud, no telemetry. Just `npm install` and your agent remembers.
