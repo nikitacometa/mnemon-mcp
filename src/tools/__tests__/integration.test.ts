@@ -13,6 +13,7 @@ import { memoryInspect } from "../memory-inspect.js";
 import { memoryDelete } from "../memory-delete.js";
 import { memoryExport } from "../memory-export.js";
 import { memoryHealth } from "../memory-health.js";
+import { sessionStart, sessionEnd, sessionList } from "../session.js";
 import { stemText } from "../../stemmer.js";
 import type { MemoryAddInput, MemorySearchInput } from "../../types.js";
 
@@ -1276,5 +1277,107 @@ describe("memory_health", () => {
     const result = memoryHealth(db, {});
     expect(result.status).toBe("degraded");
     expect(result.issues.length).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session lifecycle tools
+// ---------------------------------------------------------------------------
+
+describe("session lifecycle", () => {
+  it("sessionStart creates a session and returns id + started_at", () => {
+    const result = sessionStart(db, { client: "claude-code" });
+    expect(result.id).toMatch(/^[0-9a-f]{32}$/);
+    expect(result.started_at).toBeTruthy();
+  });
+
+  it("sessionStart stores project and meta", () => {
+    const result = sessionStart(db, {
+      client: "cursor",
+      project: "mnemon-mcp",
+      meta: { reason: "testing" },
+    });
+    const row = db.prepare("SELECT client, project, meta FROM sessions WHERE id = ?")
+      .get(result.id) as { client: string; project: string | null; meta: string };
+    expect(row.client).toBe("cursor");
+    expect(row.project).toBe("mnemon-mcp");
+    expect(JSON.parse(row.meta)).toEqual({ reason: "testing" });
+  });
+
+  it("sessionEnd ends a session and returns duration", () => {
+    const session = sessionStart(db, { client: "api" });
+    const result = sessionEnd(db, { id: session.id, summary: "did some work" });
+    expect(result.id).toBe(session.id);
+    expect(result.ended_at).toBeTruthy();
+    expect(result.duration_minutes).toBeTypeOf("number");
+    expect(result.memories_count).toBe(0);
+  });
+
+  it("sessionEnd counts memories created during session", () => {
+    const session = sessionStart(db, { client: "claude-code" });
+    memoryAdd(db, { content: "session memory 1", layer: "episodic", session_id: session.id });
+    memoryAdd(db, { content: "session memory 2", layer: "episodic", session_id: session.id });
+    const result = sessionEnd(db, { id: session.id });
+    expect(result.memories_count).toBe(2);
+  });
+
+  it("sessionEnd throws for non-existent session", () => {
+    expect(() => sessionEnd(db, { id: "nonexistent" })).toThrow(/not found/);
+  });
+
+  it("sessionEnd throws for already-ended session", () => {
+    const session = sessionStart(db, { client: "api" });
+    sessionEnd(db, { id: session.id });
+    expect(() => sessionEnd(db, { id: session.id })).toThrow(/already ended/);
+  });
+
+  it("sessionList returns recent sessions", () => {
+    sessionStart(db, { client: "claude-code", project: "proj-a" });
+    sessionStart(db, { client: "cursor", project: "proj-b" });
+    const result = sessionList(db, {});
+    expect(result.sessions.length).toBe(2);
+    expect(result.total).toBe(2);
+  });
+
+  it("sessionList filters by client", () => {
+    sessionStart(db, { client: "claude-code" });
+    sessionStart(db, { client: "cursor" });
+    const result = sessionList(db, { client: "cursor" });
+    expect(result.sessions.length).toBe(1);
+    expect(result.sessions[0]!.client).toBe("cursor");
+  });
+
+  it("sessionList filters by project", () => {
+    sessionStart(db, { client: "api", project: "alpha" });
+    sessionStart(db, { client: "api", project: "beta" });
+    const result = sessionList(db, { project: "alpha" });
+    expect(result.sessions.length).toBe(1);
+    expect(result.sessions[0]!.project).toBe("alpha");
+  });
+
+  it("sessionList active_only excludes ended sessions", () => {
+    const s1 = sessionStart(db, { client: "api" });
+    sessionStart(db, { client: "api" });
+    sessionEnd(db, { id: s1.id });
+    const result = sessionList(db, { active_only: true });
+    expect(result.sessions.length).toBe(1);
+    expect(result.sessions[0]!.ended_at).toBeNull();
+  });
+
+  it("sessionList respects limit", () => {
+    for (let i = 0; i < 5; i++) {
+      sessionStart(db, { client: "api" });
+    }
+    const result = sessionList(db, { limit: 3 });
+    expect(result.sessions.length).toBe(3);
+  });
+
+  it("sessionList includes memories_count per session", () => {
+    const s = sessionStart(db, { client: "api" });
+    memoryAdd(db, { content: "mem for count test", layer: "episodic", session_id: s.id });
+    const result = sessionList(db, {});
+    const found = result.sessions.find((sess) => sess.id === s.id);
+    expect(found).toBeDefined();
+    expect(found!.memories_count).toBe(1);
   });
 });

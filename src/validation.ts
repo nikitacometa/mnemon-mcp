@@ -89,6 +89,24 @@ export const MemoryHealthSchema = z.object({
   cleanup: z.boolean().optional().describe("When true, garbage-collect expired entries (TTL past due). Default false — report only."),
 });
 
+export const SessionStartSchema = z.object({
+  client: z.string().min(1).max(200).describe("Client identifier (e.g. 'claude-code', 'cursor', 'api')"),
+  project: z.string().max(500).optional().describe("Project scope for this session"),
+  meta: z.record(z.string(), z.unknown()).optional().describe("Additional session metadata"),
+});
+
+export const SessionEndSchema = z.object({
+  id: z.string().min(1).describe("Session ID to end"),
+  summary: z.string().max(10_000).optional().describe("Summary of what was accomplished in this session"),
+});
+
+export const SessionListSchema = z.object({
+  limit: z.number().min(1).max(100).optional().describe("Maximum sessions to return (default 20)"),
+  client: z.string().max(200).optional().describe("Filter by client identifier"),
+  project: z.string().max(500).optional().describe("Filter by project"),
+  active_only: z.boolean().optional().describe("Only return sessions that haven't ended yet (default false)"),
+});
+
 /**
  * Convert a Zod schema to MCP-compatible JSON Schema.
  * Strips $schema and additionalProperties fields that MCP doesn't use.
@@ -108,3 +126,6 @@ export const memoryInspectToolSchema = zodToToolSchema(MemoryInspectSchema);
 export const memoryExportToolSchema = zodToToolSchema(MemoryExportSchema);
 export const memoryDeleteToolSchema = zodToToolSchema(MemoryDeleteSchema);
 export const memoryHealthToolSchema = zodToToolSchema(MemoryHealthSchema);
+export const sessionStartToolSchema = zodToToolSchema(SessionStartSchema);
+export const sessionEndToolSchema = zodToToolSchema(SessionEndSchema);
+export const sessionListToolSchema = zodToToolSchema(SessionListSchema);

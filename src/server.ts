@@ -26,6 +26,7 @@ import { memoryInspect } from "./tools/memory-inspect.js";
 import { memoryExport } from "./tools/memory-export.js";
 import { memoryDelete } from "./tools/memory-delete.js";
 import { memoryHealth } from "./tools/memory-health.js";
+import { sessionStart, sessionEnd, sessionList } from "./tools/session.js";
 
 import {
   MemoryAddSchema,
@@ -35,6 +36,9 @@ import {
   MemoryExportSchema,
   MemoryDeleteSchema,
   MemoryHealthSchema,
+  SessionStartSchema,
+  SessionEndSchema,
+  SessionListSchema,
   memoryAddToolSchema,
   memorySearchToolSchema,
   memoryUpdateToolSchema,
@@ -42,6 +46,9 @@ import {
   memoryExportToolSchema,
   memoryDeleteToolSchema,
   memoryHealthToolSchema,
+  sessionStartToolSchema,
+  sessionEndToolSchema,
+  sessionListToolSchema,
 } from "./validation.js";
 
 import type {
@@ -52,6 +59,9 @@ import type {
   MemoryExportInput,
   MemoryDeleteInput,
   MemoryHealthInput,
+  SessionStartInput,
+  SessionEndInput,
+  SessionListInput,
 } from "./types.js";
 
 import type { Embedder } from "./embedder.js";
@@ -127,6 +137,24 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
         description:
           "Diagnostic health report on the memory store. Returns expired entries, orphaned superseding chains, stale/never-accessed memories, low-confidence entries, and per-layer stats. Use cleanup=true to garbage-collect expired entries.",
         inputSchema: memoryHealthToolSchema,
+      },
+      {
+        name: "memory_session_start",
+        description:
+          "Start a new agent session. Returns session ID that can be passed to memory_add(session_id=...) to group memories. Use at the beginning of a work session.",
+        inputSchema: sessionStartToolSchema,
+      },
+      {
+        name: "memory_session_end",
+        description:
+          "End an active session. Optionally attach a summary of what was accomplished. Returns duration and count of memories created during the session.",
+        inputSchema: sessionEndToolSchema,
+      },
+      {
+        name: "memory_session_list",
+        description:
+          "List recent sessions with their metadata. Supports filtering by client, project, and active-only. Returns memories count per session.",
+        inputSchema: sessionListToolSchema,
       },
     ],
   }));
@@ -205,6 +233,21 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
         case "memory_health": {
           const input = MemoryHealthSchema.parse(args ?? {}) as MemoryHealthInput;
           const result = memoryHealth(db, input);
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+        case "memory_session_start": {
+          const input = SessionStartSchema.parse(args) as SessionStartInput;
+          const result = sessionStart(db, input);
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+        case "memory_session_end": {
+          const input = SessionEndSchema.parse(args) as SessionEndInput;
+          const result = sessionEnd(db, input);
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+        case "memory_session_list": {
+          const input = SessionListSchema.parse(args ?? {}) as SessionListInput;
+          const result = sessionList(db, input);
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         default:

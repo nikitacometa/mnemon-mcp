@@ -168,6 +168,51 @@ export interface MemoryHealthInput {
   cleanup?: boolean;
 }
 
+export interface SessionStartInput {
+  client: string;
+  project?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionStartOutput {
+  id: string;
+  started_at: string;
+}
+
+export interface SessionEndInput {
+  id: string;
+  summary?: string;
+}
+
+export interface SessionEndOutput {
+  id: string;
+  ended_at: string;
+  duration_minutes: number;
+  memories_count: number;
+}
+
+export interface SessionListInput {
+  limit?: number;
+  client?: string;
+  project?: string;
+  active_only?: boolean;
+}
+
+export interface SessionListResult {
+  id: string;
+  client: string;
+  project: string | null;
+  started_at: string;
+  ended_at: string | null;
+  summary: string | null;
+  memories_count: number;
+}
+
+export interface SessionListOutput {
+  sessions: SessionListResult[];
+  total: number;
+}
+
 export interface MemoryHealthOutput {
   status: "healthy" | "warning" | "degraded";
   issues: string[];
