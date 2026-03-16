@@ -21,7 +21,7 @@
     "server.json"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "build": "tsc",
@@ -45,7 +45,13 @@
     "persistent-memory",
     "knowledge-base",
     "multilingual",
-    "stemming"
+    "stemming",
+    "local-first",
+    "privacy",
+    "typescript",
+    "cursor",
+    "windsurf",
+    "layered-memory"
   ],
   "repository": {
     "type": "git",

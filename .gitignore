@@ -6,3 +6,4 @@ dist/
 stderr.log
 test_smoke.py
 docs/
+.mcpregistry_*

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-16
+
+### Added
+- MCP Registry manifest (`server.json`) for official registry submission
+- `mcpName` field in package.json for registry verification
+- Landing page link in README
+- Demo GIF with VHS recording scripts
+
+### Changed
+- Homepage URL updated to landing page (aisatisfy.me/mnemon/)
+
 ## [1.0.0] - 2026-03-16
 
 ### Added
@@ -30,5 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 182 tests (unit + integration + validation)
 - CI pipeline with build, test, and smoke tests
 
-[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nikitacometa/mnemon-mcp/releases/tag/v1.0.0
