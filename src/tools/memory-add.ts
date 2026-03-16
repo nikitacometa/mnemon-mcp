@@ -138,22 +138,21 @@ function findPotentialConflicts(
     .join(" OR ");
 
   try {
-    const rows = db.prepare<[string, string], { id: string; content: string }>(
+    const rows = db.prepare<[string, string, string], { id: string; content: string }>(
       `SELECT m.id, m.content
        FROM memories_fts fts
        JOIN memories m ON fts.id = m.id
        WHERE memories_fts MATCH ?
          AND m.entity_name = ?
          AND m.superseded_by IS NULL
+         AND m.id != ?
        LIMIT 3`
-    ).all(ftsTokens, entityName);
+    ).all(ftsTokens, entityName, excludeId);
 
-    return rows
-      .filter(r => r.id !== excludeId)
-      .map(r => ({
-        id: r.id,
-        snippet: r.content.length > 150 ? r.content.slice(0, 150) + "…" : r.content,
-      }));
+    return rows.map(r => ({
+      id: r.id,
+      snippet: r.content.length > 150 ? r.content.slice(0, 150) + "…" : r.content,
+    }));
   } catch {
     return [];
   }

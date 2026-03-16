@@ -90,14 +90,34 @@ export function memoryHealth(
     )
     .get()!.count;
 
-  // Optional: clean up expired entries
+  // Optional: clean up expired entries (with per-entry chain repair)
   let cleaned = 0;
   if (input.cleanup) {
-    const result = db.prepare(
-      `DELETE FROM memories
-       WHERE expires_at IS NOT NULL AND expires_at < ${now}`
-    ).run();
-    cleaned = result.changes;
+    const cleanupTx = db.transaction(() => {
+      const expiredRows = db.prepare<[], { id: string; supersedes: string | null; superseded_by: string | null }>(
+        `SELECT id, supersedes, superseded_by FROM memories
+         WHERE expires_at IS NOT NULL AND expires_at < ${now}`
+      ).all();
+
+      for (const entry of expiredRows) {
+        if (entry.supersedes && entry.superseded_by) {
+          // Middle of chain (A→B→C, B expired): rewire A→C
+          db.prepare(`UPDATE memories SET superseded_by = ? WHERE id = ?`).run(entry.superseded_by, entry.supersedes);
+          db.prepare(`UPDATE memories SET supersedes = ? WHERE id = ?`).run(entry.supersedes, entry.superseded_by);
+        } else if (entry.supersedes) {
+          // Tail of chain: reactivate predecessor
+          db.prepare(`UPDATE memories SET superseded_by = NULL WHERE id = ?`).run(entry.supersedes);
+        } else if (entry.superseded_by) {
+          // Head of chain: clear successor's back-link
+          db.prepare(`UPDATE memories SET supersedes = NULL WHERE id = ?`).run(entry.superseded_by);
+        }
+
+        db.prepare(`DELETE FROM memories WHERE id = ?`).run(entry.id);
+      }
+
+      return expiredRows.length;
+    });
+    cleaned = cleanupTx();
   }
 
   const issues: string[] = [];

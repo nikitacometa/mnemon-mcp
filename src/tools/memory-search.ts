@@ -158,6 +158,10 @@ export async function memorySearch(
 
   let ids: Array<{ id: string; score: number }>;
 
+  // Over-fetch from SQL to account for JS re-ranking (decay/importance can reorder results).
+  // Without over-fetch, pagination can show wrong items when JS sort differs from SQL sort.
+  const fetchLimit = offset > 0 ? (limit + offset) * 3 : limit;
+
   if (mode === "vector") {
     if (!embedder) {
       throw new Error("Vector search requires an embedding provider. Set MNEMON_EMBEDDING_PROVIDER env var.");
@@ -165,7 +169,7 @@ export async function memorySearch(
     if (!isVecLoaded()) {
       throw new Error("Vector search requires sqlite-vec. Install: npm install sqlite-vec");
     }
-    ids = await vectorSearch(db, input, embedder, limit + offset);
+    ids = await vectorSearch(db, input, embedder, fetchLimit);
   } else if (mode === "hybrid") {
     if (!embedder) {
       throw new Error("Hybrid search requires an embedding provider. Set MNEMON_EMBEDDING_PROVIDER env var.");
@@ -173,11 +177,11 @@ export async function memorySearch(
     if (!isVecLoaded()) {
       throw new Error("Hybrid search requires sqlite-vec. Install: npm install sqlite-vec");
     }
-    ids = await hybridSearch(db, input, embedder, limit + offset);
+    ids = await hybridSearch(db, input, embedder, fetchLimit);
   } else if (mode === "exact") {
-    ids = exactSearch(db, input, limit + offset);
+    ids = exactSearch(db, input, fetchLimit);
   } else {
-    ids = ftsSearch(db, input, limit + offset);
+    ids = ftsSearch(db, input, fetchLimit);
   }
 
   if (ids.length === 0) {
@@ -341,8 +345,6 @@ function ftsSearch(
   }
   if (input.min_confidence !== undefined) filterParams.push(input.min_confidence);
   if (input.min_importance !== undefined) filterParams.push(input.min_importance);
-
-  const params: unknown[] = [ftsQuery, ...filterParams, limit];
 
   const runQuery = (matchExpr: string, penalty = 1.0): Array<{ id: string; score: number }> => {
     try {
