@@ -1,71 +1,40 @@
 {
-  "$schema": "https://cdn.jsdelivr.net/npm/@anthropic-ai/mcp-registry@latest/dist/schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nikitacometa/mnemon-mcp",
-  "description": "Persistent layered memory for AI agents — 4-layer model (episodic, semantic, procedural, resource) with SQLite FTS5, Snowball stemming (EN+RU), fact versioning via superseding chains. Zero-cloud, single-file database.",
+  "description": "Persistent layered memory for AI agents. SQLite FTS5, fact versioning, zero-cloud.",
   "repository": {
     "url": "https://github.com/nikitacometa/mnemon-mcp",
     "source": "github"
   },
-  "version_detail": {
-    "version": "1.0.0",
-    "release_date": "2026-03-16",
-    "is_latest": true
-  },
+  "version": "1.0.1",
   "packages": [
     {
-      "registry_name": "npm",
-      "name": "mnemon-mcp",
-      "version": "1.0.0",
-      "runtime": "node",
-      "runtime_arguments": [],
-      "package_arguments": [],
-      "environment_variables": [
+      "registryType": "npm",
+      "identifier": "mnemon-mcp",
+      "version": "1.0.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
         {
           "name": "MNEMON_DB_PATH",
           "description": "Path to SQLite database file (default: ~/.mnemon-mcp/memory.db)",
-          "required": false
+          "isRequired": false,
+          "isSecret": false
         },
         {
           "name": "MNEMON_EMBEDDING_PROVIDER",
           "description": "Embedding provider for vector search: 'openai' or 'ollama' (default: disabled)",
-          "required": false
+          "isRequired": false,
+          "isSecret": false
         },
         {
           "name": "MNEMON_EMBEDDING_API_KEY",
           "description": "API key for embedding provider (required for OpenAI)",
-          "required": false
+          "isRequired": false,
+          "isSecret": true
         }
       ]
-    }
-  ],
-  "tools": [
-    {
-      "name": "memory_add",
-      "description": "Store a memory with layer, entity, confidence, importance, and optional TTL"
-    },
-    {
-      "name": "memory_search",
-      "description": "Full-text or exact search with filters by layer, entity, date, scope, confidence"
-    },
-    {
-      "name": "memory_update",
-      "description": "Update in-place or create a versioned replacement (superseding chain)"
-    },
-    {
-      "name": "memory_delete",
-      "description": "Delete a memory; re-activates predecessor if part of a superseding chain"
-    },
-    {
-      "name": "memory_inspect",
-      "description": "Get layer statistics or trace a single memory's version history"
-    },
-    {
-      "name": "memory_export",
-      "description": "Export to JSON, Markdown, or Claude-md format with filters"
-    },
-    {
-      "name": "memory_health",
-      "description": "Run diagnostics and optionally garbage-collect expired entries"
     }
   ]
 }
