@@ -118,10 +118,48 @@ function decayFactor(layer: Layer, referenceDate: string): number {
   return Math.exp(-Math.LN2 * daysSince / halfLife);
 }
 
-/** Generate a plain-text snippet from content (first SNIPPET_TOKENS words) */
-function makeSnippet(content: string): string {
+/**
+ * Recency boost — mild signal favoring newer memories.
+ * Returns 1.0 for memories created today, ~0.73 at 1 year, ~0.58 at 3 years.
+ * Applied to all layers equally.
+ */
+function recencyBoost(createdAt: string): number {
+  const daysSince = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSince <= 0) return 1.0;
+  return 1 / (1 + daysSince / 365);
+}
+
+/**
+ * Generate a snippet centered on matched query terms from original content.
+ * Falls back to the first SNIPPET_TOKENS words if no terms found.
+ */
+function makeSnippet(content: string, queryTerms?: string[]): string {
   const words = content.split(/\s+/);
   if (words.length <= SNIPPET_TOKENS) return content;
+
+  // Try to center snippet around first occurrence of a query term
+  if (queryTerms && queryTerms.length > 0) {
+    const lowerWords = words.map((w) => w.toLowerCase());
+    let bestIdx = -1;
+    for (const term of queryTerms) {
+      const termLower = term.toLowerCase();
+      const idx = lowerWords.findIndex((w) => w.includes(termLower));
+      if (idx !== -1) {
+        bestIdx = idx;
+        break;
+      }
+    }
+
+    if (bestIdx !== -1) {
+      const half = Math.floor(SNIPPET_TOKENS / 2);
+      const start = Math.max(0, bestIdx - half);
+      const end = Math.min(words.length, start + SNIPPET_TOKENS);
+      const prefix = start > 0 ? "…" : "";
+      const suffix = end < words.length ? "…" : "";
+      return prefix + words.slice(start, end).join(" ") + suffix;
+    }
+  }
+
   return words.slice(0, SNIPPET_TOKENS).join(" ") + "…";
 }
 
@@ -204,10 +242,17 @@ export async function memorySearch(
     )
     .all(...idList);
 
-  // Map back scores, boost by importance and decay for ranking
-  // Formula: final_score = bm25_score * (0.3 + 0.7 * importance) * decay(layer, age)
-  // Importance range 0.3–1.0 (wider than old 0.5–1.0)
-  // Decay: episodic/resource decay over time, semantic/procedural don't decay
+  // Extract raw query terms for snippet highlighting
+  const queryTerms = input.query
+    .trim()
+    .split(/[\s\u2013\u2014\u2015—–\-]+/)
+    .filter((t) => t.length >= 2);
+
+  // Map back scores, boost by importance, decay, and recency for ranking
+  // Formula: final_score = bm25_score * importanceBoost * decay * recency
+  // importanceBoost: 0.3–1.0 (wider range from importance field)
+  // decay: episodic/resource decay over time, semantic/procedural = 1.0
+  // recency: mild boost for newer memories (1.0 today → ~0.73 at 1yr)
   const scoreMap = new Map(ids.map((r) => [r.id, r.score]));
 
   const memories: MemorySearchResult[] = rows
@@ -215,13 +260,14 @@ export async function memorySearch(
       const bm25Score = scoreMap.get(row.id) ?? 0;
       const importanceBoost = 0.3 + 0.7 * row.importance;
       const decay = decayFactor(row.layer as Layer, row.last_accessed ?? row.created_at);
+      const recency = recencyBoost(row.created_at);
       return {
         id: row.id,
         layer: row.layer as Layer,
         title: row.title,
         content: row.content,
-        snippet: makeSnippet(row.content),
-        score: bm25Score * importanceBoost * decay,
+        snippet: makeSnippet(row.content, queryTerms),
+        score: bm25Score * importanceBoost * decay * recency,
         entity_type: row.entity_type as EntityType | null,
         entity_name: row.entity_name,
         confidence: row.confidence,
