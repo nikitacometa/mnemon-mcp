@@ -9,6 +9,9 @@
   },
   "files": [
     "dist/",
+    "!dist/__tests__/",
+    "!dist/__benchmarks__/",
+    "!dist/**/__tests__/",
     "config.example.json",
     "README.md",
     "LICENSE",

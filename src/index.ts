@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * mnemon-mcp: MCP server entry point (stdio transport).
  *
