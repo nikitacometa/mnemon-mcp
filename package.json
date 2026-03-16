@@ -17,7 +17,8 @@
     "LICENSE",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "server.json"
   ],
   "engines": {
     "node": ">=22.0.0"
@@ -57,6 +58,7 @@
   "types": "dist/index.d.ts",
   "author": "Nikita Gorokhov (https://github.com/nikitacometa)",
   "license": "MIT",
+  "mcpName": "io.github.nikitacometa/mnemon-mcp",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^12.6.2",
