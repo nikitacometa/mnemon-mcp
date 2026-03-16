@@ -10,7 +10,7 @@ Local-first. Zero-cloud. Single SQLite file.
 
 Your AI agent forgets everything after each session. Mnemon fixes that.
 
-It gives any [MCP](https://modelcontextprotocol.io)-compatible client — Claude Code, Cursor, Windsurf, or your own — a structured long-term memory backed by a single SQLite database on your machine. No API keys, no cloud, no telemetry. Just `npm install` and your agent remembers.
+It gives any [MCP](https://modelcontextprotocol.io)-compatible client — [OpenClaw](https://openclaw.ai), Claude Code, Cursor, Windsurf, or your own — a structured long-term memory backed by a single SQLite database on your machine. No API keys, no cloud, no telemetry. Just `npm install` and your agent remembers.
 
 ---
 
@@ -46,7 +46,29 @@ cd mnemon-mcp && npm install && npm run build
 
 ### Configure Your MCP Client
 
-Add to `~/.claude/mcp.json` (Claude Code) or your client's MCP config:
+<details open>
+<summary><strong>OpenClaw</strong></summary>
+
+```bash
+openclaw mcp register mnemon-mcp --command="mnemon-mcp"
+```
+
+Or add to `~/.openclaw/mcp_config.json`:
+
+```json
+{
+  "mnemon-mcp": {
+    "command": "mnemon-mcp"
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+Add to `~/.claude/mcp.json`:
 
 ```json
 {
@@ -58,19 +80,39 @@ Add to `~/.claude/mcp.json` (Claude Code) or your client's MCP config:
 }
 ```
 
+</details>
+
 <details>
-<summary>Running from source?</summary>
+<summary><strong>Cursor / Windsurf / Other MCP clients</strong></summary>
+
+Add to your client's MCP config:
 
 ```json
 {
   "mcpServers": {
     "mnemon-mcp": {
-      "command": "node",
-      "args": ["/absolute/path/to/mnemon-mcp/dist/index.js"]
+      "command": "mnemon-mcp"
     }
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><strong>Running from source?</strong></summary>
+
+Use the full path to the compiled entry point:
+
+```json
+{
+  "mnemon-mcp": {
+    "command": "node",
+    "args": ["/absolute/path/to/mnemon-mcp/dist/index.js"]
+  }
+}
+```
+
 </details>
 
 ### Verify
@@ -358,6 +400,7 @@ Returns: status (`healthy` / `warning` / `degraded`), per-layer stats, expired e
 | **Memory structure** | 4 typed layers | Flat | Flat | Graph |
 | **Fact versioning** | Superseding chains | Partial | No | No |
 | **Stemming** | EN + RU (Snowball) | EN only | EN only | None |
+| **OpenClaw support** | Native MCP | No | No | No |
 | **Dependencies** | 0 required | Qdrant, Neo4j, Ollama | FastEmbed, Python 3.12 | None |
 | **Cloud required** | No | Yes | No (SaaS optional) | No |
 | **Cost** | Free | $19–249/mo | Free + SaaS | Free |
