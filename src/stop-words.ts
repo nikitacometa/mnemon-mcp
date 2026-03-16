@@ -72,6 +72,10 @@ const RUSSIAN_STOP_WORDS = new Set([
   "всего", "около", "примерно", "более", "менее",
   "конкретно", "конкретные", "конкретных", "конкретный",
   // "серия"/"серии" kept as content words — needed for habit streak queries (KU-002, KU-005)
+  // Document type nouns — navigational, describe container not content
+  "дневник", "дневнике", "дневника", "дневнику", "дневником",
+  "журнал", "журнале", "журнала", "журналу", "журналом",
+  "запись", "записи", "записей", "записям", "записях",
   // Generic time nouns — too common to be discriminative
   "год", "года", "году", "годом", "годов", "годы",
   "лет", "лето", "лета",

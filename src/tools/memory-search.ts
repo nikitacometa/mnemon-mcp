@@ -55,15 +55,40 @@ function escapeFtsToken(token: string): string {
  * If ALL tokens are stop words, falls back to using original tokens
  * (graceful degradation — better to search with stop words than return nothing).
  */
-/** Convert a single token into an FTS5 prefix term: escape, stem, quote */
+/** Bilingual month mapping for cross-language query expansion */
+const MONTH_CROSS: Record<string, string> = {
+  // Russian → English
+  январ: "januari", феврал: "februari", март: "march",
+  апрел: "april", июн: "june", июл: "juli",
+  август: "august", сентябр: "septemb", октябр: "octob",
+  ноябр: "novemb", декабр: "decemb",
+  // English → Russian
+  januari: "январ", februari: "феврал", march: "март",
+  april: "апрел", june: "июн", juli: "июл",
+  august: "август", septemb: "сентябр", octob: "октябр",
+  novemb: "ноябр", decemb: "декабр",
+};
+
+/** Convert a single token into an FTS5 prefix term: escape, stem, quote.
+ * Month names are expanded to bilingual OR groups for cross-language matching. */
 function tokenToFts(token: string): string {
   const escaped = escapeFtsToken(token);
   if (!escaped) return "";
   const stemmed = stemWord(escaped);
   const stem = stemmed.length < escaped.length ? stemmed : escaped;
-  if (stem.length >= 2) return `"${stem}"*`;
-  if (escaped.length >= 2) return `"${escaped}"*`;
-  return `"${escaped}"`;
+
+  let primary: string;
+  if (stem.length >= 2) primary = `"${stem}"*`;
+  else if (escaped.length >= 2) primary = `"${escaped}"*`;
+  else primary = `"${escaped}"`;
+
+  // Cross-language month expansion: "март"* → ("март"* OR "march"*)
+  const crossMonth = MONTH_CROSS[stem];
+  if (crossMonth) {
+    return `(${primary} OR "${crossMonth}"*)`;
+  }
+
+  return primary;
 }
 
 function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {

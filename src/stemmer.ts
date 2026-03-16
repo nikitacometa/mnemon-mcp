@@ -63,6 +63,21 @@ export function stemWord(word: string): string {
  * indexes stemmed forms — enabling exact stem matches instead of
  * prefix-only matching at query time.
  */
+/** Bilingual month mapping: English stem ↔ Russian stem.
+ * At index time, both forms are emitted so cross-language queries work. */
+const MONTH_EN_TO_RU: Record<string, string> = {
+  januari: "январ", februari: "феврал", march: "март",
+  april: "апрел", june: "июн", juli: "июл",
+  august: "август", septemb: "сентябр", octob: "октябр",
+  novemb: "ноябр", decemb: "декабр",
+};
+const MONTH_RU_TO_EN: Record<string, string> = {
+  январ: "januari", феврал: "februari", март: "march",
+  апрел: "april", июн: "june", июл: "juli",
+  август: "august", сентябр: "septemb", октябр: "octob",
+  ноябр: "novemb", декабр: "decemb",
+};
+
 export function stemText(text: string): string {
   // Split on whitespace and common separators, keep only meaningful tokens
   const tokens = text.split(/[\s\u2013\u2014\u2015—–,;:!?.…()[\]{}"'`/\\|]+/);
@@ -81,7 +96,17 @@ export function stemText(text: string): string {
       continue;
     }
 
-    result.push(stemWord(clean));
+    const stemmed = stemWord(clean);
+    result.push(stemmed);
+
+    // Bilingual month expansion: emit the cross-language stem
+    const ruMonth = MONTH_EN_TO_RU[stemmed];
+    if (ruMonth) {
+      result.push(ruMonth);
+    } else {
+      const enMonth = MONTH_RU_TO_EN[stemmed];
+      if (enMonth) result.push(enMonth);
+    }
   }
 
   return result.join(" ");
