@@ -51,11 +51,23 @@ function escapeFtsToken(token: string): string {
  * If ALL tokens are stop words, falls back to using original tokens
  * (graceful degradation — better to search with stop words than return nothing).
  */
+/** Convert a single token into an FTS5 prefix term: escape, stem, quote */
+function tokenToFts(token: string): string {
+  const escaped = escapeFtsToken(token);
+  if (!escaped) return "";
+  const stemmed = stemWord(escaped);
+  const stem = stemmed.length < escaped.length ? stemmed : escaped;
+  if (stem.length >= 2) return `"${stem}"*`;
+  if (escaped.length >= 2) return `"${escaped}"*`;
+  return `"${escaped}"`;
+}
+
 function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
-  // Split on whitespace AND em/en-dash so "феврале–марте" → two tokens
+  // Split on whitespace, em/en-dash, AND hyphens (FTS5 unicode61 tokenizes hyphens as separators,
+  // so "рэп-архив" must become separate tokens to match the stemmed index)
   const rawTokens = query
     .trim()
-    .split(/[\s\u2013\u2014\u2015—–]+/)
+    .split(/[\s\u2013\u2014\u2015—–\-]+/)
     .filter((t) => t.length > 0);
 
   // Filter stop words. Strip trailing punctuation before lookup so "Никиты?" → "никиты"
@@ -63,9 +75,7 @@ function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
     t.replace(/[?!.,;:—–\u2014\u2013]+$/, "").toLowerCase();
   const contentTokens = rawTokens.filter((t) => {
     const norm = normalizeForStopword(t);
-    // Drop stop words
     if (isStopWord(norm)) return false;
-    // Drop single chars and 1-2 digit standalone numbers (e.g. "1", "03")
     if (norm.length <= 1) return false;
     if (/^\d{1,2}$/.test(norm)) return false;
     return true;
@@ -73,25 +83,7 @@ function buildFtsQuery(query: string, operator: "AND" | "OR" = "AND"): string {
   const effectiveTokens = contentTokens.length > 0 ? contentTokens : rawTokens;
 
   const ftsTokens = effectiveTokens
-    .map((t) => {
-      const escaped = escapeFtsToken(t);
-      if (!escaped) return "";
-      // Stem the token for better morphological matching
-      // e.g. "субличностях" → stem "субличн" → "субличн"* matches "субличность"
-      const stemmed = stemWord(escaped);
-      // Use the shorter of stemmed/original for prefix matching (wider recall).
-      // If stem is ≥3 chars, use stem* for morphological coverage.
-      // If stem is too short (e.g. "Юля"→"юл"), fall back to escaped* if escaped ≥3.
-      // This ensures short proper names like "Юле" still get prefix matching.
-      const stem = stemmed.length < escaped.length ? stemmed : escaped;
-      if (stem.length >= 3) {
-        return `"${stem}"*`;
-      }
-      if (escaped.length >= 3) {
-        return `"${escaped}"*`;
-      }
-      return `"${escaped}"`;
-    })
+    .map(tokenToFts)
     .filter((t) => t !== "" && t !== '""');
 
   if (ftsTokens.length === 0) {
@@ -317,7 +309,6 @@ function ftsSearch(
     conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
 
   // Field weights for bm25(): title=3x, content=1x, entity_name=2x
-  // Reduced title boost to prevent false positives when common words appear in titles
   const sql = `
     SELECT fts.id, bm25(memories_fts, 3.0, 1.0, 2.0) AS rank
     FROM memories_fts fts
@@ -346,21 +337,41 @@ function ftsSearch(
 
   const params: unknown[] = [ftsQuery, ...filterParams, limit];
 
+  const runQuery = (matchExpr: string, penalty = 1.0): Array<{ id: string; score: number }> => {
+    try {
+      const p = [matchExpr, ...filterParams, limit];
+      const rows = db.prepare<unknown[], FtsRow>(sql).all(...p);
+      return rows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) * penalty }));
+    } catch {
+      return [];
+    }
+  };
+
   try {
-    const rows = db.prepare<unknown[], FtsRow>(sql).all(...params);
-    const results = rows.map((r) => ({ id: r.id, score: normalizeBm25(r.rank) }));
+    let results = runQuery(ftsQuery);
+
+    // Progressive AND relaxation: when full AND with 4+ tokens returns too few results,
+    // try AND with just the 3 longest (most specific) stems before falling back to OR.
+    if (results.length < limit) {
+      const contentTokens = ftsQuery.split(/ AND /);
+      if (contentTokens.length >= 4) {
+        // Sort by stem length descending (longer stems = more specific)
+        const top3 = [...contentTokens].sort((a, b) => b.length - a.length).slice(0, 3);
+        const relaxedQuery = top3.join(" AND ");
+        const relaxedResults = runQuery(relaxedQuery, 0.9);
+        const existingIds = new Set(results.map((r) => r.id));
+        const newOnly = relaxedResults.filter((r) => !existingIds.has(r.id));
+        results = [...results, ...newOnly];
+      }
+    }
 
     // Supplement with OR results when AND returns fewer than limit results.
-    // This fills the result set when AND is too restrictive (misses partial matches).
-    if (results.length < limit && input.query.trim().split(/\s+/).length > 1) {
+    if (results.length < limit && input.query.trim().split(/[\s\-]+/).length > 1) {
       const orQuery = buildFtsQuery(input.query, "OR");
-      const orParams = [orQuery, ...filterParams, limit];
-      const orRows = db.prepare<unknown[], FtsRow>(sql).all(...orParams);
-      const andIds = new Set(results.map((r) => r.id));
-      const orOnly = orRows
-        .filter((r) => !andIds.has(r.id))
-        .map((r) => ({ id: r.id, score: normalizeBm25(r.rank) * 0.8 }));
-      return [...results, ...orOnly];
+      const orResults = runQuery(orQuery, 0.8);
+      const existingIds = new Set(results.map((r) => r.id));
+      const orOnly = orResults.filter((r) => !existingIds.has(r.id));
+      results = [...results, ...orOnly];
     }
 
     return results;

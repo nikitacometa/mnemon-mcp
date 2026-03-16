@@ -55,12 +55,23 @@ const RUSSIAN_STOP_WORDS = new Set([
   // Generic navigational nouns
   "информация", "информации", "информацию", "информацией",
   "файл", "файла", "файле", "файлу", "файлом", "файлы",
+  "контекст", "контексте", "контекста", "контексту", "контекстом",
   // Generic adjectives/nouns describing state — navigational, not content
   "текущий", "текущая", "текущее", "текущие", "текущего", "текущем",
   "состояние", "состоянии", "состоянием", "состояния",
   "данные", "данных", "данным", "данными",
-  // "серия" is too common (book series, TV series, habit streaks) — too ambiguous
-  "серия", "серии", "серий", "серию", "серией", "серийный",
+  // Temporal state words — too generic, present in many files
+  "сейчас", "сегодня", "вчера", "завтра",
+  // Action verbs describing reading/writing — not content topics
+  "прочитал", "прочитала", "прочитали",
+  "написал", "написала", "написали", "написаны", "написано",
+  "начал", "начала", "начали", "начало",
+  "вписывается", "вписываются",
+  "соотносятся", "соотносится",
+  // Quantifier words — navigational
+  "всего", "около", "примерно", "более", "менее",
+  "конкретно", "конкретные", "конкретных", "конкретный",
+  // "серия"/"серии" kept as content words — needed for habit streak queries (KU-002, KU-005)
   // Generic time nouns — too common to be discriminative
   "год", "года", "году", "годом", "годов", "годы",
   "лет", "лето", "лета",
