@@ -127,13 +127,13 @@ Use the full path to the compiled entry point:
 echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | mnemon-mcp
 ```
 
-You should see 7 tools in the response. The database (`~/.mnemon-mcp/memory.db`) is created automatically on first run.
+You should see 10 tools in the response. The database (`~/.mnemon-mcp/memory.db`) is created automatically on first run.
 
 That's it. Your agent now has persistent memory.
 
 ## What It Can Do
 
-### 7 MCP Tools
+### 10 MCP Tools
 
 | Tool | What it does |
 |------|-------------|
@@ -144,6 +144,9 @@ That's it. Your agent now has persistent memory.
 | **`memory_inspect`** | Get layer statistics or trace a single memory's version history |
 | **`memory_export`** | Export to JSON, Markdown, or Claude-md format with filters |
 | **`memory_health`** | Run diagnostics: expired entries, orphaned chains, stale memories; optionally GC |
+| **`memory_session_start`** | Start an agent session — returns session ID for grouping memories |
+| **`memory_session_end`** | End a session with optional summary; returns duration and memory count |
+| **`memory_session_list`** | List sessions with filters by client, project, or active status |
 
 ### MCP Resources & Prompts
 
@@ -170,7 +173,9 @@ Two modes, both supporting layer / entity / scope / date / confidence filters:
 
 **FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements with a score penalty. Progressive AND relaxation tries top-3 most specific terms before falling back to full OR.
 
-Scores: `bm25 × (0.3 + 0.7 × importance) × decay(layer)`
+Scores: `bm25 × (0.3 + 0.7 × importance) × decay(layer) × recency`
+
+Recency boost: `1 / (1 + daysSince / 365)` — gently rewards recently created memories without penalizing old ones.
 
 **Exact mode** — `LIKE` substring match for precise phrase lookups.
 
@@ -398,6 +403,45 @@ Returns: status (`healthy` / `warning` / `degraded`), per-layer stats, expired e
 
 </details>
 
+<details>
+<summary><code>memory_session_start</code></summary>
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `client` | string | Yes | Client identifier (e.g. `claude-code`, `cursor`, `api`) |
+| `project` | string | No | Project scope for this session |
+| `meta` | object | No | Additional session metadata |
+
+Returns: `id` (session UUID), `started_at` (ISO 8601).
+
+</details>
+
+<details>
+<summary><code>memory_session_end</code></summary>
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Session ID to end |
+| `summary` | string | No | Summary of what was accomplished (max 10K chars) |
+
+Returns: `id`, `ended_at`, `duration_minutes`, `memories_count`.
+
+</details>
+
+<details>
+<summary><code>memory_session_list</code></summary>
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | number | No | Max sessions (default 20, max 100) |
+| `client` | string | No | Filter by client |
+| `project` | string | No | Filter by project |
+| `active_only` | boolean | No | Only return sessions that haven't ended (default false) |
+
+Returns: array of sessions with `id`, `client`, `project`, `started_at`, `ended_at`, `summary`, `memories_count`.
+
+</details>
+
 ## How It Compares
 
 | | **mnemon-mcp** | mem0 | basic-memory | Anthropic KG |
@@ -418,7 +462,7 @@ Returns: status (`healthy` / `warning` / `degraded`), per-layer stats, expired e
 ```bash
 npm run dev        # run via tsx (no build step)
 npm run build      # TypeScript → dist/
-npm test           # vitest (182 tests)
+npm test           # vitest (194 tests)
 npm run bench      # performance benchmarks
 npm run db:backup  # backup database
 ```

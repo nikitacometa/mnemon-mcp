@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-17
+
+### Added
+- **Session lifecycle tools**: `memory_session_start`, `memory_session_end`, `memory_session_list` — group episodic memories by agent session with client, project, and summary tracking
+- **Search query logging** — `search_log` table (migration v5) for query observability: query text, mode, result count, duration
+- **Recency boost** in FTS scoring: `1 / (1 + daysSince / 365)` rewards recently created memories
+- **Query-centered snippets** — search results highlight the first matched term instead of always starting from content beginning
+- 12 new integration tests for session lifecycle (194 total: 17 md-parser + 13 kb-import + 123 integration + 41 validation)
+
+### Fixed
+- Pagination with `min_confidence`/`min_importance` filters: moved from JS post-filter to SQL WHERE (fixes empty pages at high offsets)
+- `memory_health` cleanup: chain repair now correctly reactivates predecessors when superseding entry is deleted
+- Contradiction detection: properly handles edge case where superseded memory matches source_file
+- Removed dead `conflicting` variable in memory-add
+
 ## [1.0.1] - 2026-03-16
 
 ### Added
@@ -41,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 182 tests (unit + integration + validation)
 - CI pipeline with build, test, and smoke tests
 
-[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nikitacometa/mnemon-mcp/releases/tag/v1.0.0
