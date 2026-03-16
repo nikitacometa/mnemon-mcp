@@ -181,7 +181,9 @@ export async function memorySearch(
   }
 
   if (ids.length === 0) {
-    return { memories: [], total_found: 0, query_time_ms: Date.now() - startMs };
+    const queryTimeMs = Date.now() - startMs;
+    logSearch(db, input, 0, [], queryTimeMs);
+    return { memories: [], total_found: 0, query_time_ms: queryTimeMs };
   }
 
   // Fetch full rows for matched IDs
@@ -239,10 +241,15 @@ export async function memorySearch(
     ).run(...updateIds);
   }
 
+  const queryTimeMs = Date.now() - startMs;
+
+  // Log search query for observability
+  logSearch(db, input, memories.length, memories.map((m) => m.id), queryTimeMs);
+
   return {
     memories,
     total_found: memories.length,
-    query_time_ms: Date.now() - startMs,
+    query_time_ms: queryTimeMs,
   };
 }
 
@@ -574,5 +581,40 @@ async function hybridSearch(
     .map(([id, score]) => ({ id, score }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+/** Log search query to search_log table for observability. Best-effort, never throws. */
+function logSearch(
+  db: Database.Database,
+  input: MemorySearchInput,
+  resultCount: number,
+  resultIds: string[],
+  queryTimeMs: number
+): void {
+  try {
+    const filters: Record<string, unknown> = {};
+    if (input.layers) filters.layers = input.layers;
+    if (input.entity_name) filters.entity_name = input.entity_name;
+    if (input.scope) filters.scope = input.scope;
+    if (input.date_from) filters.date_from = input.date_from;
+    if (input.date_to) filters.date_to = input.date_to;
+    if (input.as_of) filters.as_of = input.as_of;
+    if (input.min_confidence !== undefined) filters.min_confidence = input.min_confidence;
+    if (input.min_importance !== undefined) filters.min_importance = input.min_importance;
+
+    db.prepare(
+      `INSERT INTO search_log (query, mode, filters, result_count, result_ids, query_time_ms)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      input.query,
+      input.mode ?? "fts",
+      JSON.stringify(filters),
+      resultCount,
+      JSON.stringify(resultIds.slice(0, 20)),
+      queryTimeMs
+    );
+  } catch {
+    // Best-effort logging — never fail a search because of log write
+  }
 }
 

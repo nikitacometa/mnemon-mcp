@@ -16,7 +16,7 @@ const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -70,6 +70,12 @@ function runMigrations(db: Database.Database): void {
     applyMigration4(db);
     db.pragma("user_version = 4");
     currentVersion = 4;
+  }
+
+  if (currentVersion < 5) {
+    applyMigration5(db);
+    db.pragma("user_version = 5");
+    currentVersion = 5;
   }
 }
 
@@ -358,6 +364,32 @@ function applyMigration4(db: Database.Database): void {
         PRIMARY KEY (canonical, alias),
         CHECK (alias != canonical)
       )
+    `).run();
+  })();
+}
+
+/**
+ * Migration v5: Search query logging.
+ * - Create search_log table for tracking memory_search usage
+ */
+function applyMigration5(db: Database.Database): void {
+  db.transaction(() => {
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS search_log (
+        id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        query       TEXT NOT NULL,
+        mode        TEXT NOT NULL DEFAULT 'fts',
+        filters     TEXT NOT NULL DEFAULT '{}',
+        result_count INTEGER NOT NULL DEFAULT 0,
+        result_ids  TEXT NOT NULL DEFAULT '[]',
+        query_time_ms INTEGER NOT NULL DEFAULT 0,
+        occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_search_log_occurred
+        ON search_log(occurred_at DESC)
     `).run();
   })();
 }
