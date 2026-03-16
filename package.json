@@ -11,7 +11,10 @@
     "dist/",
     "config.example.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
   ],
   "engines": {
     "node": ">=22.0.0"
@@ -49,7 +52,7 @@
     "url": "https://github.com/nikitacometa/mnemon-mcp/issues"
   },
   "types": "dist/index.d.ts",
-  "author": "nikitacometa",
+  "author": "Nikita Gorokhov (https://github.com/nikitacometa)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

@@ -1,41 +1,65 @@
 # mnemon-mcp
 
 [![CI](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nikitacometa/mnemon-mcp/actions/workflows/ci.yml)
-![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![npm version](https://img.shields.io/npm/v/mnemon-mcp)](https://www.npmjs.com/package/mnemon-mcp)
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Persistent layered memory for AI agents — local-first, zero-cloud, single-file SQLite.
+**Persistent layered memory for AI agents.**
+Local-first. Zero-cloud. Single SQLite file.
 
-Works with any [MCP](https://modelcontextprotocol.io)-compatible client: Claude Code, Cursor, Windsurf, and others.
+Your AI agent forgets everything after each session. Mnemon fixes that.
 
-## Features
+It gives any [MCP](https://modelcontextprotocol.io)-compatible client — Claude Code, Cursor, Windsurf, or your own — a structured long-term memory backed by a single SQLite database on your machine. No API keys, no cloud, no telemetry. Just `npm install` and your agent remembers.
 
-- **4-layer memory model** — episodic, semantic, procedural, resource — each with distinct access patterns and lifetimes
-- **Full-text search** — FTS5 with BM25 ranking, field boosting, AND→OR fallback
-- **Index-time stemming** — Snowball stemmer for English and Russian, applied at both index and query time for precise morphological matching
-- **Fact versioning** — superseding chains track how knowledge evolves; search returns only the latest version
-- **Knowledge base import** — bulk-import Markdown files with configurable layer routing, splitting, and deduplication
-- **MCP Resources & Prompts** — 2 static resources (stats, recent), 2 resource templates (layer, entity); pre-built prompts for recall, context loading, journaling
-- **Two transports** — stdio for local agents, HTTP with Bearer auth for remote setups
-- **Optional vector search** — BYOK embeddings (OpenAI, Ollama) with sqlite-vec for hybrid FTS5+vector search via RRF
-- **Zero required dependencies** — works with just SQLite, no cloud API needed. Vector search is opt-in
+---
+
+## Why Layered Memory?
+
+Flat key-value stores treat "what happened yesterday" the same as "never commit without tests." That's wrong — different kinds of knowledge have different lifetimes and access patterns.
+
+Mnemon organizes memories into **four layers**:
+
+| Layer | What it stores | How it's accessed | Lifetime |
+|-------|---------------|-------------------|----------|
+| **Episodic** | Events, sessions, journal entries | By date or period | Decays (30-day half-life) |
+| **Semantic** | Facts, preferences, relationships | By topic or entity | Stable |
+| **Procedural** | Rules, workflows, conventions | Loaded at startup | Rarely changes |
+| **Resource** | Reference material, book notes | On demand | Decays slowly (90 days) |
+
+A journal entry from last Tuesday and a coding rule that never changes live in different layers — because they should.
 
 ## Quick Start
 
-**Option A — npm (recommended):**
+### Install
 
 ```bash
 npm install -g mnemon-mcp
 ```
 
-**Option B — from source:**
+Or from source:
 
 ```bash
 git clone https://github.com/nikitacometa/mnemon-mcp.git
 cd mnemon-mcp && npm install && npm run build
 ```
 
-Add to your MCP client config (e.g. `~/.claude/mcp.json`):
+### Configure Your MCP Client
+
+Add to `~/.claude/mcp.json` (Claude Code) or your client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "mnemon-mcp": {
+      "command": "mnemon-mcp"
+    }
+  }
+}
+```
+
+<details>
+<summary>Running from source?</summary>
 
 ```json
 {
@@ -47,24 +71,189 @@ Add to your MCP client config (e.g. `~/.claude/mcp.json`):
   }
 }
 ```
+</details>
 
-The database (`~/.mnemon-mcp/memory.db`) is created automatically on first run.
+### Verify
 
-Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index.js`
+```bash
+echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | mnemon-mcp
+```
 
-## Tools
+You should see 7 tools in the response. The database (`~/.mnemon-mcp/memory.db`) is created automatically on first run.
 
-| Tool | Description |
+That's it. Your agent now has persistent memory.
+
+## What It Can Do
+
+### 7 MCP Tools
+
+| Tool | What it does |
 |------|-------------|
-| `memory_add` | Store a memory with layer, entity, confidence, importance, and optional TTL |
-| `memory_search` | FTS5 or exact search with layer/entity/date/scope/confidence filters and pagination |
-| `memory_update` | Update in-place or create a versioned replacement (superseding chain) |
-| `memory_delete` | Permanently delete a memory, re-activating its predecessor if any |
-| `memory_inspect` | Layer statistics or single-memory history trace |
-| `memory_export` | Export to JSON, Markdown, or claude-md with filters |
-| `memory_health` | Diagnostic report: expired entries, orphaned chains, stale memories, GC |
+| **`memory_add`** | Store a memory with layer, entity, confidence, importance, and optional TTL |
+| **`memory_search`** | Full-text or exact search with filters by layer, entity, date, scope, confidence |
+| **`memory_update`** | Update in-place or create a versioned replacement (superseding chain) |
+| **`memory_delete`** | Delete a memory; re-activates its predecessor if any |
+| **`memory_inspect`** | Get layer statistics or trace a single memory's version history |
+| **`memory_export`** | Export to JSON, Markdown, or Claude-md format with filters |
+| **`memory_health`** | Run diagnostics: expired entries, orphaned chains, stale memories; optionally GC |
 
-### memory_add
+### MCP Resources & Prompts
+
+**Resources** — live data your agent can read:
+
+| URI | Returns |
+|-----|---------|
+| `memory://stats` | Aggregate stats per layer |
+| `memory://recent` | Memories created/updated in last 24h |
+| `memory://layer/{layer}` | All active memories in a layer |
+| `memory://entity/{name}` | All active memories about an entity |
+
+**Prompts** — pre-built workflows:
+
+| Prompt | Purpose |
+|--------|---------|
+| `recall` | "Tell me everything you know about X" |
+| `context-load` | Load relevant context before starting a task |
+| `journal` | Create a structured journal entry |
+
+## Search
+
+Two modes, both supporting layer / entity / scope / date / confidence filters:
+
+**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements with a score penalty. Progressive AND relaxation tries top-3 most specific terms before falling back to full OR.
+
+Scores: `bm25 × (0.3 + 0.7 × importance) × decay(layer)`
+
+**Exact mode** — `LIKE` substring match for precise phrase lookups.
+
+### Stemming
+
+Snowball stemmer applied at both **index time** and **query time** for English and Russian. This means `"running"` matches `"runs"`, and `"книги"` matches `"книга"`. Stop words are filtered from queries to improve precision.
+
+## Fact Versioning
+
+Knowledge evolves. Mnemon doesn't delete old facts — it chains them:
+
+```
+v1: "Team uses React 17"  →  superseded_by: v2
+v2: "Team uses React 19"  →  supersedes: v1 (active)
+```
+
+Search returns only the latest version. `memory_inspect` with `include_history: true` reveals the full chain. `memory_delete` re-activates the predecessor — nothing is lost.
+
+## Vector Search (Optional, BYOK)
+
+Enable semantic similarity search by providing your own embedding API:
+
+```bash
+# OpenAI
+MNEMON_EMBEDDING_PROVIDER=openai MNEMON_EMBEDDING_API_KEY=sk-... mnemon-mcp
+
+# Ollama (local, free)
+MNEMON_EMBEDDING_PROVIDER=ollama mnemon-mcp
+```
+
+This unlocks two additional search modes:
+- **`mode: "vector"`** — pure cosine similarity search
+- **`mode: "hybrid"`** — FTS5 + vector combined via [Reciprocal Rank Fusion](https://www.singlestore.com/blog/hybrid-search-using-reciprocal-rank-fusion-in-sql/)
+
+Requires `sqlite-vec` (installed as optional dependency). New memories are embedded on add; existing ones can be backfilled.
+
+<details>
+<summary>Embedding configuration</summary>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MNEMON_EMBEDDING_PROVIDER` | — | `openai` or `ollama` (unset = disabled) |
+| `MNEMON_EMBEDDING_API_KEY` | — | API key (required for OpenAI) |
+| `MNEMON_EMBEDDING_MODEL` | `text-embedding-3-small` / `nomic-embed-text` | Model name |
+| `MNEMON_EMBEDDING_DIMENSIONS` | `1024` / `768` | Vector dimensions |
+| `MNEMON_OLLAMA_URL` | `http://localhost:11434` | Ollama endpoint |
+
+</details>
+
+## Importing a Knowledge Base
+
+Got a folder of Markdown files? Import them in bulk:
+
+```bash
+cp config.example.json ~/.mnemon-mcp/config.json   # edit this first
+npm run import:kb -- --kb-path /path/to/your/kb     # incremental (skips unchanged files)
+```
+
+The config maps glob patterns to memory layers:
+
+```json
+{
+  "owner_name": "your-name",
+  "extra_stop_words": [],
+  "mappings": [
+    {
+      "glob": "journal/*.md",
+      "layer": "episodic",
+      "entity_type": "user",
+      "entity_name": "$owner",
+      "importance": 0.6,
+      "split": "h2"
+    },
+    {
+      "glob": "people/*.md",
+      "layer": "semantic",
+      "entity_type": "person",
+      "entity_name": "from-heading",
+      "importance": 0.8,
+      "split": "h3"
+    }
+  ]
+}
+```
+
+### Config Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `owner_name` | string | Your name — used for `$owner` substitution in `entity_name` |
+| `extra_stop_words` | string[] | Words to filter from FTS queries (e.g., your name forms) |
+| `glob` | string | File pattern to match |
+| `layer` | string | Target memory layer |
+| `entity_type` | string | `user` / `person` / `project` / `concept` / `file` / `rule` / `tool` |
+| `entity_name` | string | Literal name, `"$owner"`, or `"from-heading"` (extract from H2/H3) |
+| `split` | string | `"whole"` (one memory per file), `"h2"`, or `"h3"` (split on headings) |
+| `importance` | number | 0.0–1.0, affects search ranking |
+| `confidence` | number | 0.0–1.0, filterable in search |
+| `scope` | string | Optional namespace |
+
+## HTTP Transport
+
+For remote or multi-client setups:
+
+```bash
+MNEMON_AUTH_TOKEN=your-secret MNEMON_PORT=3000 npm run start:http
+```
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /mcp` | MCP JSON-RPC (Bearer auth if token set) |
+| `GET /health` | `{"status":"ok","version":"..."}` |
+
+Rate limiting (100 req/min/IP by default), CORS headers, 1MB body limit, timing-safe auth, graceful shutdown on SIGTERM.
+
+## Configuration Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MNEMON_DB_PATH` | `~/.mnemon-mcp/memory.db` | Database path |
+| `MNEMON_KB_PATH` | `.` | Knowledge base root for import |
+| `MNEMON_CONFIG_PATH` | `~/.mnemon-mcp/config.json` | Import config path |
+| `MNEMON_AUTH_TOKEN` | — | Bearer token for HTTP transport |
+| `MNEMON_PORT` | `3000` | HTTP transport port |
+| `MNEMON_CORS_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin` |
+| `MNEMON_RATE_LIMIT` | `100` | Max requests per minute per IP (0 = off) |
+
+## Tool Reference
+
+<details>
+<summary><code>memory_add</code> — full parameter list</summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -80,50 +269,65 @@ Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index
 | `ttl_days` | number | No | Auto-expire after N days |
 | `valid_from` / `valid_until` | string | No | Temporal fact window (ISO 8601) |
 
-### memory_search
+</details>
+
+<details>
+<summary><code>memory_search</code> — full parameter list</summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Search text (tokenized for FTS5) |
-| `mode` | string | No | `fts` (default) or `exact` (LIKE substring) |
+| `query` | string | Yes | Search text |
+| `mode` | string | No | `fts` (default), `exact`, `vector`, `hybrid` |
 | `layers` | string[] | No | Filter by layers |
 | `entity_name` | string | No | Filter by entity (supports aliases) |
 | `scope` | string | No | Filter by scope |
-| `date_from` / `date_to` | string | No | Date range filter (ISO 8601) |
-| `as_of` | string | No | Temporal fact filter — only facts valid at this date |
-| `min_confidence` | number | No | Minimum confidence threshold |
-| `min_importance` | number | No | Minimum importance threshold |
+| `date_from` / `date_to` | string | No | Date range (ISO 8601) |
+| `as_of` | string | No | Temporal fact filter — facts valid at this date |
+| `min_confidence` | number | No | Minimum confidence |
+| `min_importance` | number | No | Minimum importance |
 | `limit` | number | No | Max results (default 10, max 100) |
 | `offset` | number | No | Pagination offset |
 
-### memory_update
+</details>
+
+<details>
+<summary><code>memory_update</code> — full parameter list</summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `id` | string | Yes | Memory ID to update |
+| `id` | string | Yes | Memory ID |
 | `content` | string | No | New content |
 | `title` | string | No | New title |
 | `confidence` | number | No | New confidence |
 | `importance` | number | No | New importance |
-| `supersede` | boolean | No | `true` = create versioned replacement; `false` (default) = in-place update |
-| `new_content` | string | No | Content for superseding entry (when `supersede=true`) |
+| `supersede` | boolean | No | `true` = versioned replacement; `false` (default) = in-place |
+| `new_content` | string | No | Content for superseding entry |
 
-### memory_delete
+</details>
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | string | Yes | Memory ID to delete. Re-activates predecessor if any |
-
-### memory_inspect
+<details>
+<summary><code>memory_delete</code></summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `id` | string | No | Specific memory ID. Without it — returns layer stats |
+| `id` | string | Yes | Memory ID. Re-activates predecessor if part of a superseding chain |
+
+</details>
+
+<details>
+<summary><code>memory_inspect</code></summary>
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | No | Memory ID (omit for aggregate stats) |
 | `layer` | string | No | Filter stats by layer |
 | `entity_name` | string | No | Filter stats by entity |
-| `include_history` | boolean | No | Include superseding chain |
+| `include_history` | boolean | No | Show superseding chain |
 
-### memory_export
+</details>
+
+<details>
+<summary><code>memory_export</code></summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -133,159 +337,55 @@ Verify: `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/index
 | `date_from` / `date_to` | string | No | Date range |
 | `limit` | number | No | Max entries (default all, max 10K) |
 
-### memory_health
+</details>
+
+<details>
+<summary><code>memory_health</code></summary>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `cleanup` | boolean | No | `true` = garbage-collect expired entries (default `false`, report only) |
+| `cleanup` | boolean | No | `true` = garbage-collect expired entries (default: report only) |
 
-Returns: status (`healthy`/`warning`/`degraded`), per-layer stats, expired entries, orphaned superseding chains, stale/low-confidence counts, and cleaned entry count when `cleanup=true`.
+Returns: status (`healthy` / `warning` / `degraded`), per-layer stats, expired entries, orphaned chains, stale/low-confidence counts, cleaned count when `cleanup=true`.
 
-## Memory Model
+</details>
 
-| Layer | Purpose | Access Pattern | Example |
-|-------|---------|----------------|---------|
-| **episodic** | Events, sessions | By date/period | "Debugged auth issue on March 5" |
-| **semantic** | Facts, preferences | By topic/entity | "User prefers dark theme" |
-| **procedural** | Rules, workflows | Loaded at startup | "Always run tests before commit" |
-| **resource** | Reference material | On demand | "Book notes: Designing Data-Intensive Apps" |
+## How It Compares
 
-Different kinds of knowledge have different lifetimes and retrieval patterns. A journal entry from last Tuesday and a coding convention that never changes shouldn't live in the same flat store.
-
-## Search
-
-Two modes, both with layer/entity/scope/date/confidence filters:
-
-**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements automatically. Scores are boosted by importance and recency: `bm25 × (0.3 + 0.7 × importance) × decay(layer)`. Episodic memories decay with a 30-day half-life, resource with 90 days; semantic and procedural don't decay.
-
-**Exact mode** — `LIKE` substring match for precise lookups. Useful when you need an exact phrase rather than tokenized matching.
-
-## Vector Search (Optional)
-
-Enable semantic similarity search by providing your own embedding API key:
-
-```bash
-# OpenAI embeddings
-MNEMON_EMBEDDING_PROVIDER=openai MNEMON_EMBEDDING_API_KEY=sk-... node dist/index.js
-
-# Ollama (local, free)
-MNEMON_EMBEDDING_PROVIDER=ollama node dist/index.js
-```
-
-With an embedding provider configured, two new search modes become available:
-
-- **`mode: "vector"`** — pure embedding similarity search (cosine distance)
-- **`mode: "hybrid"`** — combines FTS5 keyword search with vector similarity using [Reciprocal Rank Fusion](https://www.singlestore.com/blog/hybrid-search-using-reciprocal-rank-fusion-in-sql/)
-
-Requires `sqlite-vec` (installed automatically as optional dependency). New memories are embedded on add; existing memories can be backfilled.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MNEMON_EMBEDDING_PROVIDER` | — | `openai` or `ollama` (unset = disabled) |
-| `MNEMON_EMBEDDING_API_KEY` | — | API key (required for OpenAI) |
-| `MNEMON_EMBEDDING_MODEL` | `text-embedding-3-small` / `nomic-embed-text` | Embedding model |
-| `MNEMON_EMBEDDING_DIMENSIONS` | `1024` / `768` | Vector dimensions |
-| `MNEMON_OLLAMA_URL` | `http://localhost:11434` | Ollama API URL |
-
-## Fact Versioning
-
-When a fact changes, mnemon-mcp doesn't delete the old version — it creates a superseding chain:
-
-```
-v1: "Team uses React 17"  →  superseded_by: v2
-v2: "Team uses React 19"  →  supersedes: v1 (active)
-```
-
-Search returns only the latest. `memory_inspect` with `include_history: true` shows the full chain. `memory_delete` re-activates the predecessor.
-
-## Importing a Knowledge Base
-
-Bulk-import a directory of Markdown files with configurable routing:
-
-```bash
-cp config.example.json ~/.mnemon-mcp/config.json   # customize first
-npm run import:kb -- --kb-path /path/to/your/kb     # incremental (skips unchanged)
-npx tsx src/import/cli.ts --kb-path /path --force   # full re-import
-```
-
-Config maps glob patterns to memory layers:
-
-```json
-{
-  "owner_name": "your-name",
-  "extra_stop_words": ["your-name"],
-  "mappings": [
-    {
-      "glob": "journal/**/*.md",
-      "layer": "episodic",
-      "entity_type": "user",
-      "entity_name": "$owner",
-      "importance": 0.6,
-      "split": "h2"
-    }
-  ]
-}
-```
-
-Each mapping specifies: `glob`, `layer`, `entity_type`, `entity_name` (string | `"from-heading"` | `"$owner"`), `split` (`whole` | `h2` | `h3`), `importance`, `confidence`, and optional `scope` and `file_pattern`.
-
-## HTTP Transport
-
-```bash
-MNEMON_AUTH_TOKEN=secret MNEMON_PORT=3000 npm run start:http
-```
-
-- `POST /mcp` — MCP JSON-RPC endpoint (Bearer auth if token is set)
-- `GET /health` — returns `{"status":"ok","version":"..."}`
-
-Body size limit: 1MB. Timing-safe token comparison. Graceful shutdown on SIGTERM. CORS headers included. Rate limiting: 100 req/min per IP (configurable via `MNEMON_RATE_LIMIT`).
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MNEMON_DB_PATH` | `~/.mnemon-mcp/memory.db` | SQLite database path |
-| `MNEMON_KB_PATH` | `.` | Knowledge base path for import |
-| `MNEMON_AUTH_TOKEN` | — | Bearer token for HTTP transport |
-| `MNEMON_PORT` | `3000` | HTTP transport port |
-| `MNEMON_CONFIG_PATH` | `~/.mnemon-mcp/config.json` | Import config file path |
-| `MNEMON_CORS_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin` header |
-| `MNEMON_RATE_LIMIT` | `100` | Max requests per minute per IP (0 = disabled) |
+| | **mnemon-mcp** | mem0 | basic-memory | Anthropic KG |
+|---|---|---|---|---|
+| **Architecture** | SQLite FTS5 | Cloud API + Qdrant | Markdown + vector | JSON file |
+| **Memory structure** | 4 typed layers | Flat | Flat | Graph |
+| **Fact versioning** | Superseding chains | Partial | No | No |
+| **Stemming** | EN + RU (Snowball) | EN only | EN only | None |
+| **Dependencies** | 0 required | Qdrant, Neo4j, Ollama | FastEmbed, Python 3.12 | None |
+| **Cloud required** | No | Yes | No (SaaS optional) | No |
+| **Cost** | Free | $19–249/mo | Free + SaaS | Free |
+| **Setup** | `npm install -g` | Docker + API keys | pip + deps | Built-in |
+| **License** | MIT | Apache 2.0 | AGPL | MIT |
 
 ## Development
 
 ```bash
 npm run dev        # run via tsx (no build step)
 npm run build      # TypeScript → dist/
-npm test           # vitest
+npm test           # vitest (182 tests)
 npm run bench      # performance benchmarks
 npm run db:backup  # backup database
 ```
 
-**Stack:** TypeScript 5.9 (strict), better-sqlite3 12.x, @modelcontextprotocol/sdk 1.27, Snowball stemmer, zod 4.x, vitest 3.x.
+**Stack:** TypeScript 5.9 (strict mode), better-sqlite3, @modelcontextprotocol/sdk, Snowball stemmer, Zod, vitest.
 
-**Architecture:** `src/server.ts` (shared MCP factory) → `src/index.ts` (stdio) / `src/index-http.ts` (HTTP). Tools in `src/tools/`, import pipeline in `src/import/`. Database with WAL mode, FTS5 triggers with index-time Snowball stemming, versioned migrations via `PRAGMA user_version`.
-
-## How It Compares
-
-| | mnemon-mcp | mem0 | basic-memory | Anthropic KG |
-|---|---|---|---|---|
-| **Architecture** | SQLite FTS5 | Cloud API + Qdrant | Markdown + vector | JSON file |
-| **Dependencies** | None | Qdrant, Neo4j, Ollama | FastEmbed, Python 3.12 | None |
-| **Memory structure** | 4 layers | Flat | Flat | Graph |
-| **Fact versioning** | Superseding chains | Partial | No | No |
-| **Multilingual** | EN + RU stemming | EN only | EN only | None |
-| **License** | MIT | Apache 2.0 | AGPL | MIT |
-| **Cost** | Free | $19–249/mo | Free + SaaS | Free |
-| **Setup** | `npm install` | Docker + cloud keys | pip + dependencies | Built-in |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code guidelines.
 
 ## Design Principles
 
-- **Air-gapped** — no network calls, no telemetry. Your memories stay on your machine.
-- **Single file** — one SQLite database, zero ops, instant setup.
-- **Deterministic search** — FTS5 over embeddings: interpretable, reproducible, no GPU required.
+- **Air-gapped** — zero network calls, zero telemetry. Your memories stay on your machine.
+- **Single file** — one SQLite database, zero ops, instant backup via file copy.
+- **Deterministic search** — FTS5, not embeddings, is the default. Interpretable, reproducible, no GPU needed.
 - **Structured over flat** — layers encode access patterns; superseding chains encode time.
+- **Minimal** — 4 production dependencies. Works everywhere Node runs.
 
 ## License
 
-MIT
+[MIT](LICENSE)
