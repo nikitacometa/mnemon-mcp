@@ -46,6 +46,16 @@ export function memoryAdd(
     supersededIds.push(...existing.map((r) => r.id));
   }
 
+  // Validate session_id exists if provided
+  if (input.session_id) {
+    const session = db.prepare<[string], { id: string }>(
+      `SELECT id FROM sessions WHERE id = ?`
+    ).get(input.session_id);
+    if (!session) {
+      throw new Error(`Session not found: ${input.session_id}`);
+    }
+  }
+
   const actor = input.source ?? "api";
 
   // Run insert + supersede chain in a single transaction

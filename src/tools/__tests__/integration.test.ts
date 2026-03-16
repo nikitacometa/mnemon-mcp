@@ -89,6 +89,26 @@ describe("memory_add", () => {
     expect(diffDays).toBeGreaterThan(6);
     expect(diffDays).toBeLessThan(8);
   });
+
+  it("throws for non-existent session_id", () => {
+    expect(() =>
+      memoryAdd(db, {
+        content: "orphaned memory",
+        layer: "episodic",
+        session_id: "non-existent-session-id",
+      })
+    ).toThrow("Session not found: non-existent-session-id");
+  });
+
+  it("accepts valid session_id", () => {
+    const session = sessionStart(db, { client: "test" });
+    const result = memoryAdd(db, {
+      content: "linked memory",
+      layer: "episodic",
+      session_id: session.id,
+    });
+    expect(result.created).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
