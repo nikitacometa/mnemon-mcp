@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-03-10
+last_updated: 2026-03-16
 description: mnemon-mcp — persistent layered memory MCP server for AI agents
 ---
 
@@ -17,7 +17,7 @@ Task board shared with KB: `~/dev/mnemon/mnemon-kb/tasks/BOARD.md` (T-NNN IDs).
 npm run build      # compile TypeScript → dist/
 npm run dev        # run via tsx (no build needed)
 npm start          # run compiled dist/index.js (blocks on stdio — see Smoke Test)
-npm test           # vitest (125 tests: 17 md-parser + 13 kb-import + 95 integration)
+npm test           # vitest (182 tests: 17 md-parser + 13 kb-import + 111 integration + 41 validation)
 npm run import:kb  # import mnemon-kb markdown → SQLite (skip unchanged)
 ```
 
@@ -145,9 +145,9 @@ In `~/.claude/mcp.json`:
 ## Known Issues
 
 1. **Russian morphology** — Snowball stemmer fully integrated at index and query time. Inflected forms match via stemmed FTS5 index. Edge cases with irregular forms may still miss.
-2. **Import scope too narrow** — 21/50 golden set cases blocked (nutrition, habits, journal, finance, language, telegram not imported)
-3. **L2 retrieval = 36.9/100** — Recall@5=0.298, below 0.3 threshold. Achievable with current scope: 46.3/100
-4. **Integration tests added** — 60 integration tests covering all 6 tools + stemming + pagination + edge cases
+2. **Import scope expanded but incomplete** — 9/50 golden set cases still failing (mostly temporal queries needing date-aware search)
+3. **L2 retrieval = 70.5/100** — Recall@5=0.780, MRR=0.537, nDCG@5=0.599. Up from 36.9 baseline
+4. **182 tests** — 17 md-parser + 13 kb-import + 111 integration + 41 validation
 5. **hybrid mode = alias for fts** — no real semantic/vector search, just falls through to FTS5
 6. **No cycle protection** in superseding chains
 
