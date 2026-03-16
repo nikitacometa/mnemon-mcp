@@ -14,6 +14,10 @@ Your AI agent forgets everything after each session. Mnemon fixes that.
 
 It gives any [MCP](https://modelcontextprotocol.io)-compatible client — [OpenClaw](https://openclaw.ai), Claude Code, Cursor, Windsurf, or your own — a structured long-term memory backed by a single SQLite database on your machine. No API keys, no cloud, no telemetry. Just `npm install` and your agent remembers.
 
+<p align="center">
+  <img src="demo/mnemon-demo.gif" alt="mnemon-mcp demo — memory_add, memory_search, memory_inspect, memory_update" width="800">
+</p>
+
 ---
 
 ## Why Layered Memory?
