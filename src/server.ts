@@ -254,9 +254,14 @@ export function createMcpServer(db: Database.Database, embedder?: Embedder | nul
           throw new Error(`Unknown tool: ${name}`);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+      process.stderr.write(`[mnemon-mcp] tool ${name} error: ${detail}\n`);
+      // Return generic message to client — never leak SQL/schema/path internals
+      const safeMessage = err instanceof Error && err.message.length < 200
+        ? err.message.replace(/\/[^\s]+/g, "<path>")
+        : "Tool execution failed";
       return {
-        content: [{ type: "text", text: `Error: ${message}` }],
+        content: [{ type: "text", text: `Error: ${safeMessage}` }],
         isError: true,
       };
     }

@@ -16,6 +16,9 @@ const ExportFormat = z.enum(["json", "markdown", "claude-md"]);
 const isoDatePrefix = z.string().regex(
   /^\d{4}-\d{2}-\d{2}/,
   "Must be an ISO 8601 date (YYYY-MM-DD...)"
+).refine(
+  (v) => !Number.isNaN(Date.parse(v.length === 10 ? `${v}T00:00:00Z` : v)),
+  "Must be a valid date"
 );
 
 export const MemoryAddSchema = z.object({

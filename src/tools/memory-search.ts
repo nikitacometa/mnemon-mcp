@@ -843,6 +843,13 @@ function logSearch(
       JSON.stringify(resultIds.slice(0, 20)),
       queryTimeMs
     );
+
+    // Prune entries older than 90 days (best-effort, ~1% of calls)
+    if (Math.random() < 0.01) {
+      db.prepare(
+        `DELETE FROM search_log WHERE occurred_at < datetime('now', '-90 days')`
+      ).run();
+    }
   } catch {
     // Best-effort logging — never fail a search because of log write
   }
