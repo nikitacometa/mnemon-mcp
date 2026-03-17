@@ -14,13 +14,14 @@ export interface Embedder {
   embedBatch(texts: string[]): Promise<Float32Array[]>;
   readonly dimensions: number;
   readonly provider: string;
+  readonly model: string;
 }
 
 class OpenAIEmbedder implements Embedder {
   readonly provider = "openai";
   readonly dimensions: number;
   private readonly apiKey: string;
-  private readonly model: string;
+  readonly model: string;
   private readonly baseUrl: string;
 
   constructor() {
@@ -74,7 +75,7 @@ class OpenAIEmbedder implements Embedder {
 class OllamaEmbedder implements Embedder {
   readonly provider = "ollama";
   readonly dimensions: number;
-  private readonly model: string;
+  readonly model: string;
   private readonly baseUrl: string;
 
   constructor() {

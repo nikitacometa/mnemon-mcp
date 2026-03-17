@@ -1186,6 +1186,7 @@ describe("vector search — graceful degradation", () => {
       embedBatch: async (texts: string[]) => texts.map(() => new Float32Array(1024)),
       dimensions: 1024,
       provider: "mock",
+      model: "mock-model",
     };
     await expect(
       memorySearch(db, { query: "test query", mode: "vector" }, mockEmbedder)

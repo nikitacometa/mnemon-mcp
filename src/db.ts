@@ -16,7 +16,7 @@ const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -76,6 +76,12 @@ function runMigrations(db: Database.Database): void {
     applyMigration5(db);
     db.pragma("user_version = 5");
     currentVersion = 5;
+  }
+
+  if (currentVersion < 6) {
+    applyMigration6(db);
+    db.pragma("user_version = 6");
+    currentVersion = 6;
   }
 }
 
@@ -391,6 +397,17 @@ function applyMigration5(db: Database.Database): void {
       CREATE INDEX IF NOT EXISTS idx_search_log_occurred
         ON search_log(occurred_at DESC)
     `).run();
+  })();
+}
+
+/**
+ * Migration v6: Embedding model tracking.
+ * - Add embedding_model column to track which model produced the embedding.
+ *   Format: "provider:model:dimensions" (e.g. "openai:text-embedding-3-small:1024")
+ */
+function applyMigration6(db: Database.Database): void {
+  db.transaction(() => {
+    db.prepare(`ALTER TABLE memories ADD COLUMN embedding_model TEXT`).run();
   })();
 }
 

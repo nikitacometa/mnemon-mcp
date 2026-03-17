@@ -52,6 +52,7 @@ export interface MemoryRow {
   meta: string; // JSON string
   valid_from: string | null;
   valid_until: string | null;
+  embedding_model: string | null;
 }
 
 export interface SessionRow {

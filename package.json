@@ -31,7 +31,8 @@
     "test": "vitest run",
     "bench": "vitest bench",
     "start:http": "node dist/index-http.js",
-    "db:backup": "bash -c \"sqlite3 $HOME/.mnemon-mcp/memory.db '.backup $HOME/.mnemon-mcp/memory.db.bak' && echo 'Backup saved to ~/.mnemon-mcp/memory.db.bak'\""
+    "db:backup": "bash -c \"sqlite3 $HOME/.mnemon-mcp/memory.db '.backup $HOME/.mnemon-mcp/memory.db.bak' && echo 'Backup saved to ~/.mnemon-mcp/memory.db.bak'\"",
+    "embed:backfill": "tsx src/import/embed-backfill.ts"
   },
   "keywords": [
     "mcp",
