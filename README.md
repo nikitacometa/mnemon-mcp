@@ -169,15 +169,19 @@ That's it. Your agent now has persistent memory.
 
 ## Search
 
-Two modes, both supporting layer / entity / scope / date / confidence filters:
+Four modes, all supporting layer / entity / scope / date / confidence filters:
 
-**FTS mode** (default) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements with a score penalty. Progressive AND relaxation tries top-3 most specific terms before falling back to full OR.
+**FTS mode** (default without embeddings) — tokenized full-text search with BM25 ranking. Multi-word queries use AND; if too few results, OR supplements with a score penalty. Progressive AND relaxation tries top-3 most specific terms before falling back to full OR.
+
+**Hybrid mode** (default when embeddings configured) — combines FTS5 + vector search via [Reciprocal Rank Fusion](https://www.singlestore.com/blog/hybrid-search-using-reciprocal-rank-fusion-in-sql/). Detects quoted entities in queries (e.g., `'Essentialism'`) and runs weighted sub-queries for cross-reference retrieval.
+
+**Vector mode** — pure cosine similarity search over embeddings.
+
+**Exact mode** — `LIKE` substring match for precise phrase lookups.
 
 Scores: `bm25 × (0.3 + 0.7 × importance) × decay(layer) × recency`
 
 Recency boost: `1 / (1 + daysSince / 365)` — gently rewards recently created memories without penalizing old ones.
-
-**Exact mode** — `LIKE` substring match for precise phrase lookups.
 
 ### Stemming
 
@@ -444,25 +448,26 @@ Returns: array of sessions with `id`, `client`, `project`, `started_at`, `ended_
 
 ## How It Compares
 
-| | **mnemon-mcp** | mem0 | basic-memory | Anthropic KG |
-|---|---|---|---|---|
-| **Architecture** | SQLite FTS5 | Cloud API + Qdrant | Markdown + vector | JSON file |
-| **Memory structure** | 4 typed layers | Flat | Flat | Graph |
-| **Fact versioning** | Superseding chains | Partial | No | No |
-| **Stemming** | EN + RU (Snowball) | EN only | EN only | None |
-| **OpenClaw support** | Native MCP | No | No | No |
-| **Dependencies** | 0 required | Qdrant, Neo4j, Ollama | FastEmbed, Python 3.12 | None |
-| **Cloud required** | No | Yes | No (SaaS optional) | No |
-| **Cost** | Free | $19–249/mo | Free + SaaS | Free |
-| **Setup** | `npm install -g` | Docker + API keys | pip + deps | Built-in |
-| **License** | MIT | Apache 2.0 | AGPL | MIT |
+| | **mnemon-mcp** | mem0 | basic-memory | Engram | Anthropic KG |
+|---|---|---|---|---|---|
+| **Architecture** | SQLite FTS5 + vector | Cloud API + Qdrant | Markdown + vector | SQLite FTS5 | JSON file |
+| **Memory structure** | 4 typed layers | Flat | Flat | Flat + sessions | Graph |
+| **Search** | FTS5 + hybrid RRF | Semantic | Hybrid | FTS5 | Exact |
+| **Fact versioning** | Superseding chains | Partial | No | No | No |
+| **Stemming** | EN + RU (Snowball) | EN only | EN only | None | None |
+| **Embeddings** | BYOK (OpenAI / Ollama) | Built-in | FastEmbed | None | None |
+| **Dependencies** | 0 required | Qdrant, Neo4j | Python 3.12 | Go binary | None |
+| **Cloud required** | No | Yes | No | No | No |
+| **Cost** | Free | $19–249/mo | Free | Free | Free |
+| **Setup** | `npm install -g` | Docker + API keys | pip + deps | Go install | Built-in |
+| **License** | MIT | Apache 2.0 | AGPL | MIT | MIT |
 
 ## Development
 
 ```bash
 npm run dev        # run via tsx (no build step)
 npm run build      # TypeScript → dist/
-npm test           # vitest (194 tests)
+npm test           # vitest (229 tests)
 npm run bench      # performance benchmarks
 npm run db:backup  # backup database
 ```

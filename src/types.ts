@@ -260,6 +260,7 @@ export interface MemorySearchResult {
   confidence: number;
   importance: number;
   scope: string;
+  source_file: string | null;
   created_at: string;
   event_at: string | null;
 }

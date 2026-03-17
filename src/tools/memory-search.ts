@@ -211,6 +211,7 @@ interface MemoryBaseRow {
   confidence: number;
   importance: number;
   scope: string;
+  source_file: string | null;
   created_at: string;
   event_at: string | null;
   last_accessed: string | null;
@@ -296,7 +297,7 @@ export async function memorySearch(
   const rows = db
     .prepare<string[], MemoryBaseRow>(
       `SELECT id, layer, title, content, entity_type, entity_name,
-              confidence, importance, scope, created_at, event_at,
+              confidence, importance, scope, source_file, created_at, event_at,
               last_accessed, superseded_by
        FROM memories
        WHERE id IN (${placeholders})`
@@ -334,6 +335,7 @@ export async function memorySearch(
         confidence: row.confidence,
         importance: row.importance,
         scope: row.scope,
+        source_file: row.source_file,
         created_at: row.created_at,
         event_at: row.event_at,
       };
