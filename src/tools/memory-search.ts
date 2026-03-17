@@ -22,6 +22,7 @@ import type { Embedder } from "../embedder.js";
 import { isStopWord } from "../stop-words.js";
 import { stemWord } from "../stemmer.js";
 import { knnSearch, isVecLoaded } from "../vector.js";
+import { extractDatesFromQuery } from "../date-extractor.js";
 
 const DEFAULT_LIMIT = 10;
 const SNIPPET_TOKENS = 64;
@@ -226,13 +227,39 @@ export async function memorySearch(
   const offset = input.offset ?? 0;
   const mode = input.mode ?? "fts";
 
+  // Auto-extract dates from query for temporal routing.
+  // Only applies when caller has not supplied explicit date filters.
+  const extracted = extractDatesFromQuery(input.query);
+  if (extracted.date_from && !input.date_from) {
+    input = { ...input, date_from: extracted.date_from };
+  }
+  if (extracted.date_to && !input.date_to) {
+    input = { ...input, date_to: extracted.date_to };
+  }
+  // Use cleaned query (dates stripped) for FTS matching
+  if (extracted.date_from || extracted.date_to) {
+    input = { ...input, query: extracted.cleanedQuery || input.query };
+  }
+
   let ids: Array<{ id: string; score: number }>;
 
   // Over-fetch from SQL to account for JS re-ranking (decay/importance can reorder results).
   // Without over-fetch, pagination can show wrong items when JS sort differs from SQL sort.
   const fetchLimit = offset > 0 ? (limit + offset) * 3 : limit;
 
-  if (mode === "vector") {
+  // Detect whether the remaining query is semantically empty (all stop words / short tokens).
+  // If so, pure date-range search is more accurate than FTS5 over stripped tokens.
+  const isQueryEmpty = !input.query.trim() ||
+    input.query.trim()
+      .split(/[\s\u2013\u2014\u2015—–\-]+/)
+      .every((t) => {
+        const norm = t.replace(/[?!.,;:—–\u2014\u2013]+$/, "").toLowerCase();
+        return !norm || norm.length <= 1 || isStopWord(norm) || /^\d{1,2}$/.test(norm);
+      });
+
+  if (isQueryEmpty && (input.date_from || input.date_to)) {
+    ids = dateRangeSearch(db, input, fetchLimit);
+  } else if (mode === "vector") {
     if (!embedder) {
       throw new Error("Vector search requires an embedding provider. Set MNEMON_EMBEDDING_PROVIDER env var.");
     }
@@ -335,6 +362,72 @@ export async function memorySearch(
   };
 }
 
+/**
+ * Pure date-range search — used when the FTS query is empty after date extraction.
+ * Returns memories within the date range sorted by importance desc, event_at desc.
+ * Score uses the same importance boost formula as FTS search for consistent ranking.
+ */
+function dateRangeSearch(
+  db: Database.Database,
+  input: MemorySearchInput,
+  limit: number
+): Array<{ id: string; score: number }> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (!input.include_superseded) {
+    conditions.push("superseded_by IS NULL");
+  }
+  conditions.push("(expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))");
+
+  if (input.date_from) {
+    conditions.push("date(COALESCE(event_at, created_at)) >= ?");
+    params.push(input.date_from);
+  }
+  if (input.date_to) {
+    conditions.push("date(COALESCE(event_at, created_at)) <= ?");
+    params.push(input.date_to);
+  }
+  if (input.layers && input.layers.length > 0) {
+    conditions.push(`layer IN (${input.layers.map(() => "?").join(", ")})`);
+    params.push(...input.layers);
+  }
+  if (input.entity_name) {
+    const resolved = resolveEntityName(db, input.entity_name);
+    conditions.push("entity_name = ?");
+    params.push(resolved);
+  }
+  if (input.scope) {
+    conditions.push("scope = ?");
+    params.push(input.scope);
+  }
+  if (input.min_confidence !== undefined) {
+    conditions.push("confidence >= ?");
+    params.push(input.min_confidence);
+  }
+  if (input.min_importance !== undefined) {
+    conditions.push("importance >= ?");
+    params.push(input.min_importance);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `
+    SELECT id, importance
+    FROM memories
+    ${whereClause}
+    ORDER BY importance DESC, event_at DESC
+    LIMIT ?
+  `;
+  params.push(limit);
+
+  const rows = db.prepare<unknown[], { id: string; importance: number }>(sql).all(...params);
+  // Same importance boost formula as BM25 path for consistent ranking
+  return rows.map((r) => ({
+    id: r.id,
+    score: 0.3 + 0.7 * r.importance,
+  }));
+}
+
 function ftsSearch(
   db: Database.Database,
   input: MemorySearchInput,
@@ -373,11 +466,11 @@ function ftsSearch(
   }
 
   if (input.date_from) {
-    conditions.push("COALESCE(m.event_at, m.created_at) >= ?");
+    conditions.push("date(COALESCE(m.event_at, m.created_at)) >= ?");
   }
 
   if (input.date_to) {
-    conditions.push("COALESCE(m.event_at, m.created_at) <= ?");
+    conditions.push("date(COALESCE(m.event_at, m.created_at)) <= ?");
   }
 
   // Temporal fact windows: filter by as_of date (use datetime() for safe comparison)
@@ -502,12 +595,12 @@ function exactSearch(
   }
 
   if (input.date_from) {
-    conditions.push("COALESCE(event_at, created_at) >= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) >= ?");
     params.push(input.date_from);
   }
 
   if (input.date_to) {
-    conditions.push("COALESCE(event_at, created_at) <= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) <= ?");
     params.push(input.date_to);
   }
 
@@ -573,11 +666,11 @@ function buildMemoryFilters(
     params.push(input.scope);
   }
   if (input.date_from) {
-    conditions.push("COALESCE(event_at, created_at) >= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) >= ?");
     params.push(input.date_from);
   }
   if (input.date_to) {
-    conditions.push("COALESCE(event_at, created_at) <= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) <= ?");
     params.push(input.date_to);
   }
   if (input.as_of) {
