@@ -151,11 +151,10 @@ In `~/.claude/mcp.json`:
 ## Known Issues
 
 1. **Russian morphology** — Snowball stemmer fully integrated at index and query time with bilingual month expansion (EN↔RU). Edge cases with irregular forms may still miss.
-2. **4 golden set failures remain** — 2 date-range queries (need structured date filter, not FTS5), 1 specific-date (result at position 6), 1 cross-reference (needs semantic search)
-3. **L2 retrieval = 80.9/100** — Recall@5=0.870, MRR=0.648, nDCG@5=0.693. Up from 36.9 baseline
-4. **196 tests** — 17 md-parser + 13 kb-import + 125 integration + 41 validation
-5. **hybrid mode = alias for fts** — no real semantic/vector search, just falls through to FTS5
-6. **No cycle protection** in superseding chains
+2. **L2 retrieval (MCP hybrid) = 92.6/100** — Recall@5=0.931, MRR=0.888, nDCG@5=0.876. FTS-only=87.8. Up from 36.9 baseline
+3. **229 tests** — 23 md-parser + 13 kb-import + 27 date-extractor + 125 integration + 41 validation
+4. **Hybrid soft regressions** — FAC-002, XRF-001 regress in hybrid vs FTS (vector noise dilutes strong FTS signal via RRF). Overall hybrid still +4.8 over FTS
+5. **No cycle protection** in superseding chains
 
 ## Superseding Chain
 
