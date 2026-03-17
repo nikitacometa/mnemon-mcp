@@ -1,6 +1,6 @@
 {
   "name": "mnemon-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Persistent layered memory MCP server for AI agents — SQLite + FTS5 backend",
   "type": "module",
   "main": "dist/index.js",
@@ -12,6 +12,7 @@
     "!dist/__tests__/",
     "!dist/__benchmarks__/",
     "!dist/**/__tests__/",
+    "!dist/.tsbuildinfo",
     "config.example.json",
     "README.md",
     "LICENSE",

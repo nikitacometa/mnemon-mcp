@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-18
+
+### Added
+- **Hybrid search** — FTS5 + vector via Reciprocal Rank Fusion (RRF, k=60). Auto-enabled when embedding provider is configured. L2 eval: 92.6/100 (up from 80.9 FTS-only)
+- **Structured date extraction** — Russian natural language dates ("3 марта 2026", "в феврале–марте 2025") auto-parsed into SQL WHERE filters with query term stripping
+- **Embedding backfill CLI** — `npm run embed:backfill` batch-embeds active memories via configured provider (OpenAI/Ollama). Supports `--force`, `--batch-size`, text truncation for token limits
+- **Section-level `event_at` extraction** — import pipeline now extracts dates from H2/H3 section titles, not just filenames
+- **Cross-reference query expansion** — queries mentioning entities expand to include related terms for better recall
+- **Bilingual month expansion** — EN↔RU month names added at both index and query time ("march" matches "марта" and vice versa)
+- **Document-type stop words** — "дневник", "журнал", "запись" forms filtered from FTS queries to reduce noise
+- `source_file` field in `memory_search` response — enables eval file matching and provenance tracking
+- `embedding_model` column (migration v6) — tracks which model embedded each memory
+- 33 new tests: 6 md-parser + 27 date-extractor + 2 integration (229 total)
+
+### Fixed
+- **BM25 score inversion** — `1/(1+|rank|)` inverted relevance ordering; corrected to `|rank|/(1+|rank|)` (+9 L2 points)
+- **Single-quote FTS5 crash** — queries with apostrophes now escaped before MATCH
+- **ё→е normalization** — "ёлка" now matches "елка" in both indexing and search
+- **AND relaxation tuning** — relaxed from top-3 stems at 4+ tokens to top-2 at 3+, improving recall on short queries
+- **session_id validation** — `memory_add` now verifies session_id FK exists before insert
+- **Error sanitization** — tool errors return generic messages to MCP clients; full stack traces logged to stderr only
+- **Date validation** — `isoDatePrefix` now rejects structurally invalid dates (month 13, day 00) via `Date.parse` refine
+- **`search_log` retention** — probabilistic pruning removes entries older than 90 days (~1% of writes)
+- Removed stale `dist/tools/style-extract.*` build artifacts from npm package
+- Excluded `dist/.tsbuildinfo` (79 KB) from npm package
+
 ## [1.1.0] - 2026-03-17
 
 ### Added
@@ -56,7 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 182 tests (unit + integration + validation)
 - CI pipeline with build, test, and smoke tests
 
-[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/nikitacometa/mnemon-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nikitacometa/mnemon-mcp/releases/tag/v1.0.0
