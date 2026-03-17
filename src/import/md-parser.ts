@@ -107,6 +107,26 @@ export function splitByHeading(body: string, level: 2 | 3): Section[] {
   return sections;
 }
 
+/** Extract date from section title: "22.02.2025 [NARRATIVE]", "19.05.2025 — описание [TAG]" → ISO string */
+export function extractDateFromSectionTitle(title: string): string | null {
+  // DD.MM.YYYY at the start of the title
+  const dotFormat = title.match(/^(\d{1,2})\.(\d{2})\.(\d{4})/);
+  if (dotFormat) {
+    const day = dotFormat[1]!.padStart(2, "0");
+    const month = dotFormat[2]!;
+    const year = dotFormat[3]!;
+    return `${year}-${month}-${day}T00:00:00Z`;
+  }
+
+  // YYYY-MM-DD at the start of the title
+  const isoFormat = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoFormat) {
+    return `${isoFormat[1]}-${isoFormat[2]}-${isoFormat[3]}T00:00:00Z`;
+  }
+
+  return null;
+}
+
 /** Extract date from filename: 2026-03-05.md, 2025-q1.md, 2024.md → ISO string */
 export function extractDateFromFilename(filename: string): string | null {
   // Daily: 2026-03-05.md

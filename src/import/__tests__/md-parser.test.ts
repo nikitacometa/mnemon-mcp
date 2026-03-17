@@ -3,6 +3,7 @@ import {
   parseFrontmatter,
   splitByHeading,
   extractDateFromFilename,
+  extractDateFromSectionTitle,
   computeHash,
 } from "../md-parser.js";
 
@@ -161,6 +162,32 @@ describe("extractDateFromFilename", () => {
 
   it("returns null for filename without date", () => {
     expect(extractDateFromFilename("worldview.md")).toBeNull();
+  });
+});
+
+describe("extractDateFromSectionTitle", () => {
+  it("extracts DD.MM.YYYY from journal title with tag", () => {
+    expect(extractDateFromSectionTitle("22.02.2025 [NARRATIVE]")).toBe("2025-02-22T00:00:00Z");
+  });
+
+  it("extracts DD.MM.YYYY from title with description and tag", () => {
+    expect(extractDateFromSectionTitle("19.05.2025 — выход из марафонов [NARRATIVE]")).toBe("2025-05-19T00:00:00Z");
+  });
+
+  it("extracts single-digit day", () => {
+    expect(extractDateFromSectionTitle("3.06.2025 [ASPIRATIONAL]")).toBe("2025-06-03T00:00:00Z");
+  });
+
+  it("extracts YYYY-MM-DD format", () => {
+    expect(extractDateFromSectionTitle("2025-03-15 some title")).toBe("2025-03-15T00:00:00Z");
+  });
+
+  it("returns null for non-date title", () => {
+    expect(extractDateFromSectionTitle("Контекст: Mindful February 2025")).toBeNull();
+  });
+
+  it("returns null for empty title", () => {
+    expect(extractDateFromSectionTitle("")).toBeNull();
   });
 });
 

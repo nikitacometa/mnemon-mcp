@@ -726,31 +726,84 @@ async function vectorSearch(
     .slice(0, limit);
 }
 
+/**
+ * Extract quoted terms (single or double quotes) from query.
+ * Returns { entities: quoted terms, remainder: query without quotes }.
+ */
+function extractQuotedEntities(query: string): { entities: string[]; remainder: string } {
+  const entities: string[] = [];
+  // Match quoted terms: ASCII quotes, Unicode smart quotes, guillemets.
+  // \u2018\u2019 = left/right single, \u201C\u201D = left/right double,
+  // \u00AB\u00BB = guillemets, plus ASCII ' and "
+  const quoteChars = "'\"\u2018\u2019\u201C\u201D\u00AB\u00BB";
+  const re = new RegExp(`[${quoteChars}]\\s*([^${quoteChars}]{2,}?)\\s*[${quoteChars}]`, "g");
+  const cleaned = query.replace(re, (_match, inner: string) => {
+    entities.push(inner.trim());
+    return " ";
+  });
+  return { entities, remainder: cleaned.replace(/\s{2,}/g, " ").trim() };
+}
+
 async function hybridSearch(
   db: Database.Database,
   input: MemorySearchInput,
   embedder: Embedder,
   limit: number
 ): Promise<Array<{ id: string; score: number }>> {
-  // Run FTS and vector search in parallel
-  const [ftsResults, vecResults] = await Promise.all([
+  // Core search: FTS + vector on the original query
+  const coreSearches: Array<Promise<Array<{ id: string; score: number }>>> = [
     Promise.resolve(ftsSearch(db, input, limit)),
     vectorSearch(db, input, embedder, limit),
+  ];
+
+  // Cross-reference expansion: when the query contains quoted entities,
+  // run additional sub-queries to improve recall for multi-topic queries.
+  // E.g. "Как книга 'Эссенциализм' вписывается в убеждения о работе"
+  //   → entity sub-query: "Эссенциализм" (finds books.md)
+  //   → topic sub-queries: "вписывается в убеждения о работе" (finds worldview.md)
+  const { entities, remainder } = extractQuotedEntities(input.query);
+  const entitySearches: Array<Promise<Array<{ id: string; score: number }>>> = [];
+  const topicSearches: Array<Promise<Array<{ id: string; score: number }>>> = [];
+
+  if (entities.length > 0) {
+    for (const entity of entities) {
+      // Both FTS and vector for entity — FTS catches exact terms, vector captures semantics
+      entitySearches.push(
+        Promise.resolve(ftsSearch(db, { ...input, query: entity }, limit))
+      );
+      entitySearches.push(vectorSearch(db, { ...input, query: entity }, embedder, limit));
+    }
+    if (remainder.length > 3) {
+      topicSearches.push(
+        Promise.resolve(ftsSearch(db, { ...input, query: remainder }, limit))
+      );
+      topicSearches.push(vectorSearch(db, { ...input, query: remainder }, embedder, limit));
+    }
+  }
+
+  const [coreResults, entityResults, topicResults] = await Promise.all([
+    Promise.all(coreSearches),
+    Promise.all(entitySearches),
+    Promise.all(topicSearches),
   ]);
 
-  // Reciprocal Rank Fusion (k=60)
+  // Weighted RRF fusion: entity sub-queries get higher weight (3x) because
+  // the user explicitly quoted these entities, signaling strong intent.
+  // Core and topic sub-queries get standard weight (1x).
   const RRF_K = 60;
+  const ENTITY_WEIGHT = 3.0;
   const scores = new Map<string, number>();
 
-  ftsResults.forEach((r, i) => {
-    const rank = i + 1;
-    scores.set(r.id, (scores.get(r.id) ?? 0) + 1.0 / (RRF_K + rank));
-  });
+  const addRrf = (resultSet: Array<{ id: string; score: number }>, weight: number) => {
+    resultSet.forEach((r, i) => {
+      const rank = i + 1;
+      scores.set(r.id, (scores.get(r.id) ?? 0) + weight / (RRF_K + rank));
+    });
+  };
 
-  vecResults.forEach((r, i) => {
-    const rank = i + 1;
-    scores.set(r.id, (scores.get(r.id) ?? 0) + 1.0 / (RRF_K + rank));
-  });
+  for (const resultSet of coreResults) addRrf(resultSet, 1.0);
+  for (const resultSet of entityResults) addRrf(resultSet, ENTITY_WEIGHT);
+  for (const resultSet of topicResults) addRrf(resultSet, 1.0);
 
   return Array.from(scores.entries())
     .map(([id, score]) => ({ id, score }))

@@ -23,6 +23,7 @@ import {
   parseFile,
   splitByHeading,
   extractDateFromFilename,
+  extractDateFromSectionTitle,
   type Section,
 } from "./md-parser.js";
 
@@ -118,7 +119,10 @@ function buildMemoryInput(
     entityName = undefined;
   }
 
-  const eventAt = mapping.layer === "episodic" ? extractDateFromFilename(filename) : undefined;
+  const eventAt = mapping.layer === "episodic"
+    ? (section ? extractDateFromSectionTitle(section.title) : null)
+      ?? extractDateFromFilename(filename)
+    : undefined;
 
   // source_file includes section title for per-section superseding
   const sourceFile = section ? `${sourcePath}#${section.title}` : sourcePath;
