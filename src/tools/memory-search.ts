@@ -225,7 +225,9 @@ export async function memorySearch(
   const startMs = Date.now();
   const limit = input.limit ?? DEFAULT_LIMIT;
   const offset = input.offset ?? 0;
-  const mode = input.mode ?? "fts";
+  // Auto-select hybrid mode when embedder is available and user didn't specify mode.
+  // Hybrid (RRF of FTS5 + vector) consistently outperforms FTS-only on golden set.
+  const mode = input.mode ?? (embedder && isVecLoaded() ? "hybrid" : "fts");
 
   // Auto-extract dates from query for temporal routing.
   // Only applies when caller has not supplied explicit date filters.

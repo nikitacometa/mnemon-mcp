@@ -167,10 +167,14 @@ async function main(): Promise<void> {
     const batchStart = Date.now();
 
     try {
-      // Prepare texts: combine title + content when title is available
-      const texts = batch.map((m) =>
-        m.title ? `${m.title}\n\n${m.content}` : m.content
-      );
+      // Prepare texts: combine title + content when title is available.
+      // Truncate to ~6000 tokens worth of chars (conservative estimate for
+      // text-embedding-3-small's 8191 token limit with Cyrillic text).
+      const MAX_CHARS = 16_000;
+      const texts = batch.map((m) => {
+        const raw = m.title ? `${m.title}\n\n${m.content}` : m.content;
+        return raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) : raw;
+      });
 
       const embeddings = await embedder.embedBatch(texts);
 
