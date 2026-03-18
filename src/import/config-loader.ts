@@ -135,8 +135,14 @@ function parseConfig(json: ConfigJson): LoadedConfig {
 
     // Convert regex string to filter function
     if (m.file_pattern) {
-      const regex = new RegExp(m.file_pattern);
-      mapping.fileFilter = (filename: string) => regex.test(filename);
+      try {
+        const regex = new RegExp(m.file_pattern);
+        mapping.fileFilter = (filename: string) => regex.test(filename);
+      } catch (err) {
+        throw new Error(
+          `Invalid file_pattern regex "${m.file_pattern}" in mapping for glob "${m.glob}": ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     }
 
     return mapping;

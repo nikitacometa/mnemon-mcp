@@ -170,13 +170,22 @@ function makeSnippet(content: string, queryTerms?: string[]): string {
   const words = content.split(/\s+/);
   if (words.length <= SNIPPET_TOKENS) return content;
 
-  // Try to center snippet around first occurrence of a query term
+  // Try to center snippet around first occurrence of a query term (raw or stemmed)
   if (queryTerms && queryTerms.length > 0) {
     const lowerWords = words.map((w) => w.toLowerCase());
-    let bestIdx = -1;
+    // Build search terms: both raw and stemmed forms for snippet centering
+    const searchTerms: string[] = [];
     for (const term of queryTerms) {
-      const termLower = term.toLowerCase();
-      const idx = lowerWords.findIndex((w) => w.includes(termLower));
+      const lower = term.toLowerCase();
+      searchTerms.push(lower);
+      const stemmed = stemWord(lower);
+      if (stemmed !== lower && stemmed.length >= 2) {
+        searchTerms.push(stemmed);
+      }
+    }
+    let bestIdx = -1;
+    for (const term of searchTerms) {
+      const idx = lowerWords.findIndex((w) => w.includes(term));
       if (idx !== -1) {
         bestIdx = idx;
         break;
@@ -248,7 +257,8 @@ export async function memorySearch(
 
   // Over-fetch from SQL to account for JS re-ranking (decay/importance can reorder results).
   // Without over-fetch, pagination can show wrong items when JS sort differs from SQL sort.
-  const fetchLimit = offset > 0 ? (limit + offset) * 3 : limit;
+  // +1 enables has_more detection without a separate COUNT query.
+  const fetchLimit = offset > 0 ? (limit + offset) * 3 : limit + 1;
 
   // Detect whether the remaining query is semantically empty (all stop words / short tokens).
   // If so, pure date-range search is more accurate than FTS5 over stripped tokens.
@@ -286,8 +296,8 @@ export async function memorySearch(
 
   if (ids.length === 0) {
     const queryTimeMs = Date.now() - startMs;
-    logSearch(db, input, 0, [], queryTimeMs);
-    return { memories: [], total_found: 0, query_time_ms: queryTimeMs };
+    logSearch(db, input, mode, 0, [], queryTimeMs);
+    return { memories: [], returned_count: 0, has_more: false, query_time_ms: queryTimeMs };
   }
 
   // Fetch full rows for matched IDs
@@ -340,12 +350,14 @@ export async function memorySearch(
         event_at: row.event_at,
       };
     })
-    .sort((a, b) => b.score - a.score)
-    .slice(offset, offset + limit);
+    .sort((a, b) => b.score - a.score);
+
+  const has_more = memories.length > offset + limit;
+  const paged = memories.slice(offset, offset + limit);
 
   // Update access tracking for returned results
-  if (memories.length > 0) {
-    const updateIds = memories.map((m) => m.id);
+  if (paged.length > 0) {
+    const updateIds = paged.map((m) => m.id);
     const ph = updateIds.map(() => "?").join(", ");
     db.prepare(
       `UPDATE memories SET access_count = access_count + 1,
@@ -357,11 +369,12 @@ export async function memorySearch(
   const queryTimeMs = Date.now() - startMs;
 
   // Log search query for observability
-  logSearch(db, input, memories.length, memories.map((m) => m.id), queryTimeMs);
+  logSearch(db, input, mode, paged.length, paged.map((m) => m.id), queryTimeMs);
 
   return {
-    memories,
-    total_found: memories.length,
+    memories: paged,
+    returned_count: paged.length,
+    has_more,
     query_time_ms: queryTimeMs,
   };
 }
@@ -803,7 +816,13 @@ async function hybridSearch(
     });
   };
 
-  for (const resultSet of coreResults) addRrf(resultSet, 1.0);
+  // Adaptive FTS weight: upweight FTS when it returns strong results (≥ limit matches).
+  // This prevents vector noise from diluting high-quality FTS rankings.
+  const ftsResults = coreResults[0] ?? [];
+  const vecResults = coreResults[1] ?? [];
+  const ftsWeight = ftsResults.length >= limit ? 1.5 : 1.0;
+  addRrf(ftsResults, ftsWeight);
+  addRrf(vecResults, 1.0);
   for (const resultSet of entityResults) addRrf(resultSet, ENTITY_WEIGHT);
   for (const resultSet of topicResults) addRrf(resultSet, 1.0);
 
@@ -817,6 +836,7 @@ async function hybridSearch(
 function logSearch(
   db: Database.Database,
   input: MemorySearchInput,
+  resolvedMode: string,
   resultCount: number,
   resultIds: string[],
   queryTimeMs: number
@@ -837,7 +857,7 @@ function logSearch(
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(
       input.query,
-      input.mode ?? "fts",
+      resolvedMode,
       JSON.stringify(filters),
       resultCount,
       JSON.stringify(resultIds.slice(0, 20)),

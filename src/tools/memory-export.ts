@@ -41,12 +41,12 @@ export function memoryExport(
   }
 
   if (input.date_from) {
-    conditions.push("COALESCE(event_at, created_at) >= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) >= ?");
     params.push(input.date_from);
   }
 
   if (input.date_to) {
-    conditions.push("COALESCE(event_at, created_at) <= ?");
+    conditions.push("date(COALESCE(event_at, created_at)) <= ?");
     params.push(input.date_to);
   }
 

@@ -86,6 +86,12 @@ export function memoryAdd(
        VALUES (?, ?, ?, ?, ?)`
     ).run(id, "created", actor, null, input.content);
 
+    if (supersededIds.length > 1) {
+      process.stderr.write(
+        `[mnemon-mcp] warning: source_file "${input.source_file}" matched ${supersededIds.length} active records (superseding all)\n`
+      );
+    }
+
     for (const oldId of supersededIds) {
       db.prepare(
         `UPDATE memories SET superseded_by = ? WHERE id = ?`

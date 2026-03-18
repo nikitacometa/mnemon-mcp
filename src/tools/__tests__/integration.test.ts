@@ -662,7 +662,7 @@ describe("edge cases", () => {
   it("handles empty search results gracefully", async () => {
     const result = await memorySearch(db, { query: "nonexistent_term_xyz" });
     expect(result.memories).toEqual([]);
-    expect(result.total_found).toBe(0);
+    expect(result.returned_count).toBe(0);
   });
 
   it("handles min_confidence filter", async () => {
@@ -1358,7 +1358,7 @@ describe("session lifecycle", () => {
     sessionStart(db, { client: "cursor", project: "proj-b" });
     const result = sessionList(db, {});
     expect(result.sessions.length).toBe(2);
-    expect(result.total).toBe(2);
+    expect(result.returned_count).toBe(2);
   });
 
   it("sessionList filters by client", () => {

@@ -16,7 +16,7 @@ const DB_DIR = join(homedir(), ".mnemon-mcp");
 const DB_PATH = process.env["MNEMON_DB_PATH"] ?? join(DB_DIR, "memory.db");
 
 /** Target schema version. Increment when adding new migrations. */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /**
  * Open (or create) the SQLite database with WAL mode and all required tables.
@@ -82,6 +82,12 @@ function runMigrations(db: Database.Database): void {
     applyMigration6(db);
     db.pragma("user_version = 6");
     currentVersion = 6;
+  }
+
+  if (currentVersion < 7) {
+    applyMigration7(db);
+    db.pragma("user_version = 7");
+    currentVersion = 7;
   }
 }
 
@@ -303,6 +309,32 @@ function applyMigration2(db: Database.Database): void {
 }
 
 /**
+ * Safely add a column to a table — ignores "duplicate column name" errors
+ * so migrations are idempotent if they partially ran before PRAGMA update.
+ */
+function safeAddColumn(db: Database.Database, table: string, column: string, type: string): void {
+  try {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (!msg.includes("duplicate column name")) throw err;
+  }
+}
+
+/**
+ * Safely drop a column from a table — ignores "no such column" errors
+ * so migrations are idempotent if they partially ran before PRAGMA update.
+ */
+function safeDropColumn(db: Database.Database, table: string, column: string): void {
+  try {
+    db.prepare(`ALTER TABLE ${table} DROP COLUMN ${column}`).run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (!msg.includes("no such column")) throw err;
+  }
+}
+
+/**
  * Migration v3: Index-time stemming.
  * - Add stemmed_content and stemmed_title columns to memories table
  * - Recreate all FTS5 triggers to use stemmed columns (with COALESCE fallback)
@@ -310,9 +342,9 @@ function applyMigration2(db: Database.Database): void {
  */
 function applyMigration3(db: Database.Database): void {
   db.transaction(() => {
-    // Add stemmed columns
-    db.prepare(`ALTER TABLE memories ADD COLUMN stemmed_content TEXT`).run();
-    db.prepare(`ALTER TABLE memories ADD COLUMN stemmed_title TEXT`).run();
+    // Add stemmed columns (idempotent — safe if migration partially ran before)
+    safeAddColumn(db, "memories", "stemmed_content", "TEXT");
+    safeAddColumn(db, "memories", "stemmed_title", "TEXT");
 
     // Recreate FTS5 insert trigger — use stemmed columns with fallback
     db.prepare(`DROP TRIGGER IF EXISTS memories_fts_insert`).run();
@@ -360,8 +392,8 @@ function applyMigration3(db: Database.Database): void {
  */
 function applyMigration4(db: Database.Database): void {
   db.transaction(() => {
-    db.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
-    db.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
+    safeAddColumn(db, "memories", "valid_from", "TEXT");
+    safeAddColumn(db, "memories", "valid_until", "TEXT");
 
     db.prepare(`
       CREATE TABLE IF NOT EXISTS entity_aliases (
@@ -407,7 +439,18 @@ function applyMigration5(db: Database.Database): void {
  */
 function applyMigration6(db: Database.Database): void {
   db.transaction(() => {
-    db.prepare(`ALTER TABLE memories ADD COLUMN embedding_model TEXT`).run();
+    safeAddColumn(db, "memories", "embedding_model", "TEXT");
+  })();
+}
+
+/**
+ * Migration v7: Drop legacy embedding BLOB column.
+ * Embeddings are stored in memories_vec (sqlite-vec) since v1.2.0.
+ * The memories.embedding column was never populated by production code.
+ */
+function applyMigration7(db: Database.Database): void {
+  db.transaction(() => {
+    safeDropColumn(db, "memories", "embedding");
   })();
 }
 

@@ -10,7 +10,9 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-let vecLoaded = false;
+// Track the db instance that has sqlite-vec loaded.
+// Single-db assumption holds for MCP (one server = one db).
+let vecDb: Database.Database | null = null;
 
 /**
  * Try to load sqlite-vec extension into the database connection.
@@ -22,16 +24,16 @@ export function loadSqliteVec(db: Database.Database): boolean {
       load: (db: Database.Database) => void;
     };
     sqliteVec.load(db);
-    vecLoaded = true;
+    vecDb = db;
     return true;
   } catch {
-    vecLoaded = false;
+    vecDb = null;
     return false;
   }
 }
 
 export function isVecLoaded(): boolean {
-  return vecLoaded;
+  return vecDb !== null;
 }
 
 /**
@@ -39,7 +41,7 @@ export function isVecLoaded(): boolean {
  * Must be called after loadSqliteVec() succeeds.
  */
 export function createVecTable(db: Database.Database, dimensions: number): void {
-  if (!vecLoaded) return;
+  if (!vecDb) return;
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(
       memory_id TEXT PRIMARY KEY,
@@ -54,7 +56,7 @@ export function upsertVec(
   memoryId: string,
   embedding: Float32Array
 ): void {
-  if (!vecLoaded) return;
+  if (!vecDb) return;
   db.prepare(
     "INSERT OR REPLACE INTO memories_vec(memory_id, content_embedding) VALUES (?, ?)"
   ).run(memoryId, embedding);
@@ -62,7 +64,7 @@ export function upsertVec(
 
 /** Delete a vector when a memory is deleted. */
 export function deleteVec(db: Database.Database, memoryId: string): void {
-  if (!vecLoaded) return;
+  if (!vecDb) return;
   db.prepare("DELETE FROM memories_vec WHERE memory_id = ?").run(memoryId);
 }
 
@@ -73,7 +75,7 @@ export function knnSearch(
   k: number,
   excludeSuperseded: boolean = true
 ): Array<{ memory_id: string; distance: number }> {
-  if (!vecLoaded) return [];
+  if (!vecDb) return [];
 
   if (excludeSuperseded) {
     return db
@@ -108,7 +110,7 @@ export function knnSearch(
 
 /** Check how many memories have embeddings. */
 export function vecCount(db: Database.Database): number {
-  if (!vecLoaded) return 0;
+  if (!vecDb) return 0;
   try {
     const row = db.prepare<[], { cnt: number }>(
       "SELECT count(*) as cnt FROM memories_vec"

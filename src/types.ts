@@ -48,7 +48,6 @@ export interface MemoryRow {
   entity_type: EntityType | null;
   entity_name: string | null;
   scope: string;
-  embedding: Buffer | null;
   meta: string; // JSON string
   valid_from: string | null;
   valid_until: string | null;
@@ -211,7 +210,8 @@ export interface SessionListResult {
 
 export interface SessionListOutput {
   sessions: SessionListResult[];
-  total: number;
+  /** Number of sessions in this response (equals sessions.length). */
+  returned_count: number;
 }
 
 export interface MemoryHealthOutput {
@@ -267,11 +267,10 @@ export interface MemorySearchResult {
 
 export interface MemorySearchOutput {
   memories: MemorySearchResult[];
-  /**
-   * Number of results returned after post-filter (superseded, confidence, importance).
-   * This is NOT the total count of matching rows in the DB — it equals memories.length.
-   */
-  total_found: number;
+  /** Number of results in this response (equals memories.length). */
+  returned_count: number;
+  /** True if more results exist beyond the current offset+limit. */
+  has_more: boolean;
   query_time_ms: number;
 }
 

@@ -139,6 +139,6 @@ export function sessionList(
       summary: r.summary,
       memories_count: r.memories_count,
     })),
-    total: rows.length,
+    returned_count: rows.length,
   };
 }
